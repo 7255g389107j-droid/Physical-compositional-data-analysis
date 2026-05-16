@@ -48,6 +48,7 @@ Dataset <- read.csv("your_data.csv", row.names = 1)
 ## 📚 Academic Citation
 
 If you use this software or its logic in your research, please cite the following works:
+
 **Itagaki, T. (2026).**  DOI: [10.13140/RG.2.2.35655.05287](https://doi.org/10.13140/RG.2.2.35655.05287)
 
 ## License
