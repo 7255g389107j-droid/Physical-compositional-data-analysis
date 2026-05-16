@@ -14,17 +14,32 @@
 P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
 sample_ids <- rownames(P_raw)
 if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
-n_s <- nrow(P_raw); n_t <- ncol(P_raw)
+n_s <- nrow(P_raw)
+n_t <- ncol(P_raw)
 
-rel_status_mat <- matrix(-1, nrow=n_s, ncol=n_t, dimnames=list(sample_ids, colnames(P_raw)))
+# --- FAST VECTORIZED COHERENCE CALCULATION ---
+# Find sample-specific minima for non-zero entries efficiently
+sample_minima <- apply(P_raw, 1, function(x) {
+  nz <- x[x > 0]
+  if(length(nz) > 0) min(nz) else NA
+})
 
-# [PDF 1] Individual Profiles (Log-Scale)
+# Construct reliability status matrix globally without sample-by-sample loops
+rel_status_mat <- matrix(-1, nrow = n_s, ncol = n_t, dimnames = list(sample_ids, colnames(P_raw)))
+non_zero_mask <- P_raw > 0
+rel_status_mat[non_zero_mask] <- 0
+
+# Apply the vectorized sweep operation for the 10x safety margin threshold
+is_reliable <- sweep(P_raw, 1, sample_minima * 10, ">=")
+rel_status_mat[is_reliable & non_zero_mask] <- 1
+
+# --- [PDF 1] Individual Profiles (Log-Scale) ---
 pdf("ITAGAKI_1_Reliability_Profiles.pdf", width = 16, height = 10)
 for(i in 1:n_s) {
-  curr <- P_raw[i, ]; nz <- curr[curr > 0]
+  curr <- P_raw[i, ]
+  nz <- curr[curr > 0]
   if(length(nz) > 0) {
-    floor_i <- min(nz)
-    rel_status_mat[i, curr > 0] <- ifelse(curr[curr > 0] >= (floor_i * 10), 1, 0)
+    floor_i <- sample_minima[i]
     par(mar = c(12, 8, 6, 4), bg = "#FDFDFD", las = 1)
     y_plot <- sort(nz, decreasing = TRUE)
     plot(y_plot, type = "h", lwd = 8, lend = 1, log = "y", yaxt = "n", xaxt = "n", 
@@ -39,16 +54,15 @@ for(i in 1:n_s) {
 }
 dev.off()
 
-# --- 0. PRE-CALCULATION OF URT LIST ---
-# Identify Taxa that are reliable in ALL samples
+# --- PRE-CALCULATION OF URT LIST ---
 urt_mask <- apply(rel_status_mat, 2, function(x) all(x == 1))
 urt_list <- colnames(P_raw)[urt_mask]
 
-# --- 1. RELIABILITY HEATMAP (Clean Axis) ---
+# --- 2. RELIABILITY HEATMAP (Clean Axis) ---
 pdf("ITAGAKI_2_Reliability_Heatmap.pdf", width = 18, height = 12)
 layout(matrix(c(1, 2), nrow = 1), widths = c(0.88, 0.12))
 overall_rel <- colSums(rel_status_mat == 1)
-sorted_rel_mat <- rel_status_mat[, order(overall_rel, decreasing = TRUE)]
+sorted_rel_mat <- rel_status_mat[, order(overall_rel, decreasing = TRUE), drop = FALSE]
 plot_rel <- t(apply(sorted_rel_mat, 2, rev))
 
 par(mar = c(15, 12, 5, 2), bg = "#FFFFFF")
@@ -56,11 +70,9 @@ image(1:ncol(sorted_rel_mat), 1:nrow(sorted_rel_mat), plot_rel,
       col = c("#D5D8DC", "#F1C40F", "#2980B9"), 
       axes = FALSE, ann = FALSE)
 
-# Grid Lines
 abline(v = seq(0.5, ncol(sorted_rel_mat) + 0.5, 1), col = "white", lwd = 1)
 abline(h = seq(0.5, nrow(sorted_rel_mat) + 0.5, 1), col = "white", lwd = 1)
 
-# Labels (No Indices)
 axis(1, at = 1:ncol(sorted_rel_mat), labels = colnames(sorted_rel_mat), 
      las = 2, cex.axis = 0.55, font = 2, tick = FALSE)
 axis(2, at = 1:nrow(sorted_rel_mat), labels = rev(sample_ids), 
@@ -72,42 +84,32 @@ legend("center", legend = c("Reliable", "Uncertain", "Undetected"),
        fill = c("#2980B9", "#F1C40F", "#D5D8DC"), bty = "n", title = "Status", cex = 0.9)
 dev.off()
 
-# --- 2. ENHANCED VISUALIZATION & CALCULATION ---
+# --- 3. ENHANCED VISUALIZATION & CALCULATION ---
 pdf_file <- "ITAGAKI_Strict_Individual_Reliability_Report.pdf"
 pdf(pdf_file, width = 14, height = 10)
 
-# To store summary data
 summary_list <- list()
 
 for(i in 1:n_s) {
-  # Layout adjustment
   par(mar = c(12, 8, 6, 8), bg = "#FDFDFD", las = 1)
   
-  # CRITICAL: Identify Non-Zero components for this specific individual
   current_sample <- P_raw[i, ]
-  non_zero_mask <- current_sample > 0
-  obs_proportions <- current_sample[non_zero_mask]
+  nz_mask_i <- current_sample > 0
+  obs_proportions <- current_sample[nz_mask_i]
   obs_taxa_names <- names(obs_proportions)
   
   n_detected <- length(obs_proportions)
   
   if(n_detected > 0) {
-    # Calculate Individual Constants based on detected taxa ONLY
-    # Eff_Lib = 1 / Minimum observed proportion in this sample
-    eff_lib_i <- 1 / min(obs_proportions)
-    floor_i <- 1 / eff_lib_i
+    floor_i <- sample_minima[i]
+    eff_lib_i <- 1 / floor_i
     
-    # Define Reliable Taxa: Detected AND >= 10x floor
-    reliable_mask <- obs_proportions >= (floor_i * 10)
-    reliable_taxa_names <- obs_taxa_names[reliable_mask]
-    n_reliable <- length(reliable_taxa_names)
+    n_reliable <- sum(rel_status_mat[i, ] == 1)
     
-    # Sorting for plot
     sort_idx <- order(obs_proportions, decreasing = TRUE)
     y_sorted <- obs_proportions[sort_idx]
     taxa_sorted <- obs_taxa_names[sort_idx]
     
-    # --- PLOT INITIALIZATION ---
     plot(y_sorted, type = "h", lwd = 12, lend = 1, col = "#2C3E50",
          log = "y", yaxt = "n", xaxt = "n",
          xlab = "", ylab = "",
@@ -116,11 +118,9 @@ for(i in 1:n_s) {
     
     mtext("Relative Abundance (Log Scale)", side = 2, line = 5, cex = 1.2, las = 0)
     
-    # Draw Physics-based reference lines
-    abline(h = floor_i, col = "#E74C3C", lwd = 2, lty = 2)      # Noise Floor
-    abline(h = floor_i * 10, col = "#F1C40F", lwd = 1.5, lty = 3) # Safety Margin
+    abline(h = floor_i, col = "#E74C3C", lwd = 2, lty = 2)
+    abline(h = floor_i * 10, col = "#F1C40F", lwd = 1.5, lty = 3)
     
-    # --- STATISTICS BOX (Top Right) ---
     rect(n_detected * 0.62, 0.2, n_detected * 1.05, 1.8, col = rgb(1,1,1,0.9), border = "#BDC3C7")
     text(n_detected * 0.65, 1.50, paste("Detected Taxa (Non-Zero) :", n_detected), pos = 4, font = 2, cex = 1.0)
     text(n_detected * 0.65, 1.15, paste("Reliable Taxa (>=10x)  :", n_reliable), pos = 4, font = 2, cex = 1.0, col = "#2980B9")
@@ -128,16 +128,13 @@ for(i in 1:n_s) {
     text(n_detected * 0.65, 0.55, paste("Poisson Noise Floor      :", sprintf("%.2e", floor_i)), pos = 4, font = 1, cex = 0.9, col = "#E74C3C")
     text(n_detected * 0.65, 0.35, paste("Sample Index             :", i), pos = 4, font = 1, cex = 0.8, col = "gray")
 
-    # Axes
     axis(2, at = 10^(seq(-8, 0, 1)), labels = expression(10^0, 10^-1, 10^-2, 10^-3, 10^-4, 10^-5, 10^-6, 10^-7, 10^-8), las = 1)
     axis(1, at = 1:n_detected, labels = taxa_sorted, las = 2, cex.axis = 0.7)
     grid(nx = NA, ny = NULL, col = "gray90")
     
-    # Legend
     legend("topleft", legend = c("Measured Proportion", "10x Safety Margin", "Noise Floor (1/Eff_Lib)"),
            col = c("#2C3E50", "#F1C40F", "#E74C3C"), lty = c(1, 3, 2), lwd = c(4, 2, 2), bty = "n", cex = 0.8)
     
-    # Store results for summary table
     summary_list[[i]] <- data.frame(
       Sample_ID = sample_ids[i],
       Eff_Lib = eff_lib_i,
@@ -147,10 +144,9 @@ for(i in 1:n_s) {
     )
   }
 }
-
 dev.off()
 
-# --- 3. CONSOLIDATED SUMMARY REPORT ---
+# --- 4. CONSOLIDATED SUMMARY REPORT ---
 final_report <- do.call(rbind, summary_list)
 final_report$Reliability_Score <- paste0(round(final_report$Reliable_Taxa / final_report$Detected_Taxa * 100, 1), "%")
 
