@@ -1,0 +1,162 @@
+# =================================================================
+# Developed by: Tatsuki Itagaki
+# Saturday, May 9, 2026
+# Copyright (c) 2026 Tatsuki Itagaki
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, 
+# please cite the following works:
+# Itagaki, T (2026).  DOI: 10.13140/RG.2.2.35655.05287
+# =================================================================
+
+# --- 1. DATA PREPARATION ---
+P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
+sample_ids <- rownames(P_raw)
+if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
+n_s <- nrow(P_raw); n_t <- ncol(P_raw)
+
+rel_status_mat <- matrix(-1, nrow=n_s, ncol=n_t, dimnames=list(sample_ids, colnames(P_raw)))
+
+# [PDF 1] Individual Profiles (Log-Scale)
+pdf("ITAGAKI_1_Reliability_Profiles.pdf", width = 16, height = 10)
+for(i in 1:n_s) {
+  curr <- P_raw[i, ]; nz <- curr[curr > 0]
+  if(length(nz) > 0) {
+    floor_i <- min(nz)
+    rel_status_mat[i, curr > 0] <- ifelse(curr[curr > 0] >= (floor_i * 10), 1, 0)
+    par(mar = c(12, 8, 6, 4), bg = "#FDFDFD", las = 1)
+    y_plot <- sort(nz, decreasing = TRUE)
+    plot(y_plot, type = "h", lwd = 8, lend = 1, log = "y", yaxt = "n", xaxt = "n", 
+         xlab = "", ylab = "Proportion (Log Scale)",
+         main = paste("PHYSICAL RELIABILITY PROFILE:", sample_ids[i]), 
+         ylim = c(floor_i * 0.1, 2), col = "#2C3E50")
+    at_y <- 10^(seq(floor(log10(floor_i * 0.1)), 0, 1))
+    axis(2, at = at_y, labels = parse(text = paste0("10^", log10(at_y))), cex.axis = 0.9)
+    axis(1, at = 1:length(nz), labels = names(y_plot), las = 2, cex.axis = 0.6)
+    abline(h = c(floor_i, floor_i * 10), col = c("#E74C3C", "#F1C40F"), lty = c(2, 3), lwd = 2)
+  }
+}
+dev.off()
+
+# --- 0. PRE-CALCULATION OF URT LIST ---
+# Identify Taxa that are reliable in ALL samples
+urt_mask <- apply(rel_status_mat, 2, function(x) all(x == 1))
+urt_list <- colnames(P_raw)[urt_mask]
+
+# --- 1. RELIABILITY HEATMAP (Clean Axis) ---
+pdf("ITAGAKI_2_Reliability_Heatmap.pdf", width = 18, height = 12)
+layout(matrix(c(1, 2), nrow = 1), widths = c(0.88, 0.12))
+overall_rel <- colSums(rel_status_mat == 1)
+sorted_rel_mat <- rel_status_mat[, order(overall_rel, decreasing = TRUE)]
+plot_rel <- t(apply(sorted_rel_mat, 2, rev))
+
+par(mar = c(15, 12, 5, 2), bg = "#FFFFFF")
+image(1:ncol(sorted_rel_mat), 1:nrow(sorted_rel_mat), plot_rel, 
+      col = c("#D5D8DC", "#F1C40F", "#2980B9"), 
+      axes = FALSE, ann = FALSE)
+
+# Grid Lines
+abline(v = seq(0.5, ncol(sorted_rel_mat) + 0.5, 1), col = "white", lwd = 1)
+abline(h = seq(0.5, nrow(sorted_rel_mat) + 0.5, 1), col = "white", lwd = 1)
+
+# Labels (No Indices)
+axis(1, at = 1:ncol(sorted_rel_mat), labels = colnames(sorted_rel_mat), 
+     las = 2, cex.axis = 0.55, font = 2, tick = FALSE)
+axis(2, at = 1:nrow(sorted_rel_mat), labels = rev(sample_ids), 
+     las = 1, cex.axis = 0.7, tick = FALSE)
+
+title(main = "SYSTEM RELIABILITY MAP (Physical Existence)")
+par(mar = c(0, 0, 0, 0)); plot.new()
+legend("center", legend = c("Reliable", "Uncertain", "Undetected"), 
+       fill = c("#2980B9", "#F1C40F", "#D5D8DC"), bty = "n", title = "Status", cex = 0.9)
+dev.off()
+
+# --- 2. ENHANCED VISUALIZATION & CALCULATION ---
+pdf_file <- "ITAGAKI_Strict_Individual_Reliability_Report.pdf"
+pdf(pdf_file, width = 14, height = 10)
+
+# To store summary data
+summary_list <- list()
+
+for(i in 1:n_s) {
+  # Layout adjustment
+  par(mar = c(12, 8, 6, 8), bg = "#FDFDFD", las = 1)
+  
+  # CRITICAL: Identify Non-Zero components for this specific individual
+  current_sample <- P_raw[i, ]
+  non_zero_mask <- current_sample > 0
+  obs_proportions <- current_sample[non_zero_mask]
+  obs_taxa_names <- names(obs_proportions)
+  
+  n_detected <- length(obs_proportions)
+  
+  if(n_detected > 0) {
+    # Calculate Individual Constants based on detected taxa ONLY
+    # Eff_Lib = 1 / Minimum observed proportion in this sample
+    eff_lib_i <- 1 / min(obs_proportions)
+    floor_i <- 1 / eff_lib_i
+    
+    # Define Reliable Taxa: Detected AND >= 10x floor
+    reliable_mask <- obs_proportions >= (floor_i * 10)
+    reliable_taxa_names <- obs_taxa_names[reliable_mask]
+    n_reliable <- length(reliable_taxa_names)
+    
+    # Sorting for plot
+    sort_idx <- order(obs_proportions, decreasing = TRUE)
+    y_sorted <- obs_proportions[sort_idx]
+    taxa_sorted <- obs_taxa_names[sort_idx]
+    
+    # --- PLOT INITIALIZATION ---
+    plot(y_sorted, type = "h", lwd = 12, lend = 1, col = "#2C3E50",
+         log = "y", yaxt = "n", xaxt = "n",
+         xlab = "", ylab = "",
+         main = paste("STRICT RELIABILITY PROFILE:", sample_ids[i]),
+         ylim = c(floor_i * 0.5, 2))
+    
+    mtext("Relative Abundance (Log Scale)", side = 2, line = 5, cex = 1.2, las = 0)
+    
+    # Draw Physics-based reference lines
+    abline(h = floor_i, col = "#E74C3C", lwd = 2, lty = 2)      # Noise Floor
+    abline(h = floor_i * 10, col = "#F1C40F", lwd = 1.5, lty = 3) # Safety Margin
+    
+    # --- STATISTICS BOX (Top Right) ---
+    rect(n_detected * 0.62, 0.2, n_detected * 1.05, 1.8, col = rgb(1,1,1,0.9), border = "#BDC3C7")
+    text(n_detected * 0.65, 1.50, paste("Detected Taxa (Non-Zero) :", n_detected), pos = 4, font = 2, cex = 1.0)
+    text(n_detected * 0.65, 1.15, paste("Reliable Taxa (>=10x)  :", n_reliable), pos = 4, font = 2, cex = 1.0, col = "#2980B9")
+    text(n_detected * 0.65, 0.85, paste("Eff. Library Size        :", sprintf("%.2e", round(eff_lib_i))), pos = 4, font = 1, cex = 0.9)
+    text(n_detected * 0.65, 0.55, paste("Poisson Noise Floor      :", sprintf("%.2e", floor_i)), pos = 4, font = 1, cex = 0.9, col = "#E74C3C")
+    text(n_detected * 0.65, 0.35, paste("Sample Index             :", i), pos = 4, font = 1, cex = 0.8, col = "gray")
+
+    # Axes
+    axis(2, at = 10^(seq(-8, 0, 1)), labels = expression(10^0, 10^-1, 10^-2, 10^-3, 10^-4, 10^-5, 10^-6, 10^-7, 10^-8), las = 1)
+    axis(1, at = 1:n_detected, labels = taxa_sorted, las = 2, cex.axis = 0.7)
+    grid(nx = NA, ny = NULL, col = "gray90")
+    
+    # Legend
+    legend("topleft", legend = c("Measured Proportion", "10x Safety Margin", "Noise Floor (1/Eff_Lib)"),
+           col = c("#2C3E50", "#F1C40F", "#E74C3C"), lty = c(1, 3, 2), lwd = c(4, 2, 2), bty = "n", cex = 0.8)
+    
+    # Store results for summary table
+    summary_list[[i]] <- data.frame(
+      Sample_ID = sample_ids[i],
+      Eff_Lib = eff_lib_i,
+      Noise_Floor = floor_i,
+      Detected_Taxa = n_detected,
+      Reliable_Taxa = n_reliable
+    )
+  }
+}
+
+dev.off()
+
+# --- 3. CONSOLIDATED SUMMARY REPORT ---
+final_report <- do.call(rbind, summary_list)
+final_report$Reliability_Score <- paste0(round(final_report$Reliable_Taxa / final_report$Detected_Taxa * 100, 1), "%")
+
+cat("\n==========================================================\n")
+cat("      FINAL SYSTEM RELIABILITY SUMMARY REPORT             \n")
+cat("==========================================================\n")
+print(final_report, row.names = FALSE)
+cat("==========================================================\n")
+cat(sprintf("PDF Report saved as: %s\n", pdf_file))
