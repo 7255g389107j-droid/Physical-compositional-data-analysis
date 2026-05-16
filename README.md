@@ -59,6 +59,6 @@ Copyright (c) 2026 Tatsuki Itagaki
 
 WARNING: Compositional data analysis is an analysis without scales. There was very little information available regarding the compositional data, so I had to perform many unnecessary calculations to reach the true conclusion. Reliability is the shortest path to truth. 
 
-# This is something I gained only by acknowledging my defeat and reflecting on it. This system would not exist without the mentor (Norio Sugimoto) who taught me statistics.
+# This is something I gained only by acknowledging my defeat and reflecting on it. This system would not exist without my mentor (Norio Sugimoto) who taught me statistics.
 
-For information on my defeat, please refer to another repository.
+*For more context on the exploratory journey and the defeats that led to this methodology, please refer to my other repository.*
