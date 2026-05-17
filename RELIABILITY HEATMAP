@@ -128,7 +128,6 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
   valid_idx     <- which(sorted_detected > 0)
   
   if (length(valid_idx) > 0) {
-    
     sorted_scores[valid_idx] <- round(((sorted_detected[valid_idx] - sorted_reliable[valid_idx]) / sorted_detected[valid_idx]) * 100, 1)
   }
   
@@ -173,10 +172,10 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
       true_match_mask <- which(is_pattern_dup)
       
       if (length(true_match_mask) > 0) {
-        
         sub_slice_A <- matrix_slice_A[true_match_mask, , drop = FALSE]
         sub_slice_B <- matrix_slice_B[true_match_mask, , drop = FALSE]
-        is_copy_paste <- rowSums(sub_slice_A != sub_slice_B) == 0
+        
+        is_copy_paste <- rowSums(abs(sub_slice_A - sub_slice_B) > 1e-9) == 0
         
         s1_names <- sample_ids[idx_A_nums[true_match_mask]]
         s2_names <- sample_ids[idx_B_nums[true_match_mask]]
@@ -189,7 +188,7 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
         print(alert_summary, right = FALSE, row.names = FALSE)
         cat("----------------------------------------------------------\n")
         
-        # 6. Deep Dive Report into Suspect Components (High-Speed Matrix-First Approach)
+        # 6. Deep Dive Report into Suspect Components
         master_forensic_list <- list()
         list_idx <- 1
         
@@ -203,23 +202,20 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
           active_components <- which(vals_A > 0 | vals_B > 0)
           
           if (length(active_components) > 0) {
-            
-            master_forensic_list[[list_idx]] <- cbind(
+            # 【バグ修正】as.vector() でベクトルの名前属性を破棄し、データフレーム結合時の表記崩れを完全防御
+            master_forensic_list[[list_idx]] <- data.frame(
               Compare_Pair = paste0("[", sample_ids[row_A_val], " vs ", sample_ids[row_B_val], "]"),
               Component    = colnames(P_raw)[active_components],
-              Raw_Val_A    = as.character(vals_A[active_components]),
-              Raw_Val_B    = as.character(vals_B[active_components])
+              Raw_Val_A    = as.vector(vals_A[active_components]),
+              Raw_Val_B    = as.vector(vals_B[active_components]),
+              stringsAsFactors = FALSE
             )
             list_idx <- list_idx + 1
           }
         }
         
         if (length(master_forensic_list) > 0) {
-          
-          master_forensic_db <- as.data.frame(do.call(rbind, master_forensic_list), stringsAsFactors = FALSE)
-          
-          master_forensic_db$Raw_Val_A <- as.numeric(master_forensic_db$Raw_Val_A)
-          master_forensic_db$Raw_Val_B <- as.numeric(master_forensic_db$Raw_Val_B)
+          master_forensic_db <- do.call(rbind, master_forensic_list)
           
           cat("Detailed raw value comparison for suspect components (Omnibus Flattened View):\n\n")
           print(master_forensic_db, row.names = FALSE)
