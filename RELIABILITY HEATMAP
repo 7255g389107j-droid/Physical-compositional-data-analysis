@@ -112,11 +112,7 @@ print(final_report, row.names = FALSE)
 cat("Uncertainty_Score = zero is suspected noise data.\n")
 cat("==========================================================\n")
 
-# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (STABLE ROBUST VERSION) ---
-# CRITICAL CORRECTION: Resolved the double-indexing shift bug inside the step 3 array pruner.
-# Safely combines logical criteria before invoking which() to guarantee absolute subscript integrity.
-# 100% finalized to run flawlessly across any high-dimensional compositional data matrices.
-
+# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (MAX-STABLE VERSION) ---
 if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && exists("sample_ids")) {
   
   # 1. Fetch adjacent sample ids to evaluate potential sequence clusters
@@ -126,25 +122,23 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
   # 2. Re-compute Uncertainty Scores directly from sorted reliability metrics matrix
   sorted_detected  <- rowSums(sorted_rel_mat != -1)
   sorted_reliable  <- rowSums(sorted_rel_mat == 1)
-  sorted_uncertain <- sorted_detected - sorted_reliable
   
   # Calculate final percentage scores safely avoiding NA injections
   sorted_scores <- rep(-1, times = n_samples_sorted)
   valid_idx     <- which(sorted_detected > 0)
   
   if (length(valid_idx) > 0) {
-    sorted_scores[valid_idx] <- round((sorted_uncertain[valid_idx] / sorted_detected[valid_idx]) * 100, 1)
+    
+    sorted_scores[valid_idx] <- round(((sorted_detected[valid_idx] - sorted_reliable[valid_idx]) / sorted_detected[valid_idx]) * 100, 1)
   }
   
   # 3. Detect adjacent score duplicates inside 1D array stream
   idx_A <- 1:(n_samples_sorted - 1)
   idx_B <- 2:n_samples_sorted
   
-  # SUCCESSFUL BUG FIX: Merged logic conditions securely before running which() to block index shifts
   is_adjacent_score_match <- which((sorted_scores[idx_A] == sorted_scores[idx_B]) & (sorted_scores[idx_A] != -1))
   
   # === TRUE EARLY PASS ===
-  # If no adjacent duplicates exist, safe skip heavy matrix comparison instantly
   if (length(is_adjacent_score_match) == 0) {
     cat("\n==========================================================\n")
     cat("          FORENSIC INTEGRITY PASS REPORT                  \n")
@@ -170,25 +164,24 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
     if (length(valid_pairs) > 0) {
       idx_A_nums <- raw_row_map_A[valid_pairs]
       idx_B_nums <- raw_row_map_B[valid_pairs]
-      n_pairs    <- length(idx_A_nums)
       
-      # 5. Extract target matrix row fragments and compute row-by-row deltas
       matrix_slice_A <- P_raw[idx_A_nums, , drop = FALSE]
       matrix_slice_B <- P_raw[idx_B_nums, , drop = FALSE]
       
       # Axis 1: Structural duplicate fraud (Zeros vs Non-Zeros topology sync)
       is_pattern_dup <- rowSums((matrix_slice_A > 0) != (matrix_slice_B > 0)) == 0
-      
-      # Axis 2: Pure copy-paste fraud (Exact numeric matching)
-      is_copy_paste  <- rowSums(matrix_slice_A != matrix_slice_B) == 0
-      
       true_match_mask <- which(is_pattern_dup)
       
       if (length(true_match_mask) > 0) {
+        
+        sub_slice_A <- matrix_slice_A[true_match_mask, , drop = FALSE]
+        sub_slice_B <- matrix_slice_B[true_match_mask, , drop = FALSE]
+        is_copy_paste <- rowSums(sub_slice_A != sub_slice_B) == 0
+        
         s1_names <- sample_ids[idx_A_nums[true_match_mask]]
         s2_names <- sample_ids[idx_B_nums[true_match_mask]]
         
-        verdict <- ifelse(is_copy_paste[true_match_mask], 
+        verdict <- ifelse(is_copy_paste, 
                           " -> WARNING: Raw numeric values are 100% IDENTICAL. Extreme suspicion of data fabrication (Copy-Paste).", 
                           " -> NOTICE: Patterns match but raw values differ. Evaluate for scaling manipulation or artificial simulation.")
         
@@ -196,17 +189,13 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
         print(alert_summary, right = FALSE, row.names = FALSE)
         cat("----------------------------------------------------------\n")
         
-        # 6. Deep Dive Report into Suspect Components (Perfect Direct Coordinates Sync)
+        # 6. Deep Dive Report into Suspect Components (High-Speed Matrix-First Approach)
         master_forensic_list <- list()
         list_idx <- 1
         
-        # Loop variable leverages 'p' directly as a pointer to the true candidates index universe
         for (p in true_match_mask) {
           row_A_val <- idx_A_nums[p]
           row_B_val <- idx_B_nums[p]
-          
-          name_A <- sample_ids[row_A_val]
-          name_B <- sample_ids[row_B_val]
           
           vals_A <- P_raw[row_A_val, ]
           vals_B <- P_raw[row_B_val, ]
@@ -214,19 +203,24 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
           active_components <- which(vals_A > 0 | vals_B > 0)
           
           if (length(active_components) > 0) {
-            master_forensic_list[[list_idx]] <- data.frame(
-              Compare_Pair = rep(paste0("[", name_A, " vs ", name_B, "]"), times = length(active_components)),
+            
+            master_forensic_list[[list_idx]] <- cbind(
+              Compare_Pair = paste0("[", sample_ids[row_A_val], " vs ", sample_ids[row_B_val], "]"),
               Component    = colnames(P_raw)[active_components],
-              Raw_Val_A    = vals_A[active_components],
-              Raw_Val_B    = vals_B[active_components],
-              stringsAsFactors = FALSE
+              Raw_Val_A    = as.character(vals_A[active_components]),
+              Raw_Val_B    = as.character(vals_B[active_components])
             )
             list_idx <- list_idx + 1
           }
         }
         
         if (length(master_forensic_list) > 0) {
-          master_forensic_db <- do.call(rbind, master_forensic_list)
+          
+          master_forensic_db <- as.data.frame(do.call(rbind, master_forensic_list), stringsAsFactors = FALSE)
+          
+          master_forensic_db$Raw_Val_A <- as.numeric(master_forensic_db$Raw_Val_A)
+          master_forensic_db$Raw_Val_B <- as.numeric(master_forensic_db$Raw_Val_B)
+          
           cat("Detailed raw value comparison for suspect components (Omnibus Flattened View):\n\n")
           print(master_forensic_db, row.names = FALSE)
         } else {
