@@ -1,0 +1,137 @@
+# =================================================================
+# FULL-SCALE SENSITIVITY ENGINE: LOO-STABILITY TRACKER (ENHANCED)
+# Purpose: Detect "System Perturbers" via leave-one-out impact analysis
+# Developed by: Tatsuki Itagaki
+# Copyright (c) 2026 Tatsuki Itagaki
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, 
+# please cite the following works:
+# Itagaki, T (2026).  DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T (2026).  DOI: 10.13140/RG.2.2.21982.60486
+# =================================================================
+
+# --- 0. PHYSICAL FILTERING & DYNAMIC SCALING ---
+set.seed(42) # For reproducibility
+
+P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
+n_s <- nrow(P_raw)
+n_t <- ncol(P_raw)
+
+# --- STEP 1 & 2: INDIVIDUAL NOISE FLOOR MATRIX (HIGH-SPEED VECTORIZED) ---
+non_zero_mask <- P_raw > 0
+huge_value <- max(P_raw) + 1.0
+P_temp <- P_raw
+P_temp[!non_zero_mask] <- huge_value
+min_col_idx <- max.col(-P_temp, ties.method = "first")
+sample_minima <- P_raw[1:n_s + (min_col_idx - 1) * n_s]
+
+is_reliable_mat <- sweep(P_raw, 1, sample_minima * 10, ">=")
+is_reliable_mat[is.na(is_reliable_mat)] <- FALSE
+
+# ULTRA-STRICT Policy A filter
+valid_taxa_mask <- colSums(is_reliable_mat) == n_s
+
+if(sum(valid_taxa_mask) < 2) {
+  stop("CRITICAL ERROR: No taxa passed the ULTRA-STRICT Policy A filter. URT bone structure missing.")
+}
+
+d_m <- P_raw[, valid_taxa_mask, drop = FALSE]
+taxa_ids <- colnames(d_m)
+if(is.null(taxa_ids)) taxa_ids <- paste0("Taxon_", 1:ncol(d_m))
+
+# Dynamic Effective Library Size Estimation
+avg_min_val <- mean(apply(d_m, 2, min))
+eff_lib <- 1 / avg_min_val 
+
+# --- 1. CORE WRAPPER FOR STABILITY METRICS ---
+calc_system_stability <- function(data_subset, lib_size) {
+  L <- log(data_subset)
+  P <- data_subset
+  
+  # Physical: Invariance Ratio (IR) Tracking
+  obs_v <- apply(L, 2, var)
+  theo_v <- 1 / (colMeans(P) * lib_size)
+  ir_vals <- obs_v / theo_v
+  
+  return(c(IR_Min = mean(ir_vals))) 
+}
+
+# --- 2. EXECUTE LEAVE-ONE-OUT (LOO) ANALYSIS ---
+n_total <- nrow(d_m)
+baseline <- calc_system_stability(d_m, eff_lib)
+loo_results <- matrix(NA, nrow = n_total, ncol = 1)
+colnames(loo_results) <- c("Delta_IR")
+
+cat("Analyzing System Perturbations per Sample...\n")
+for(i in 1:n_total) {
+  res_i <- calc_system_stability(d_m[-i, , drop = FALSE], eff_lib)
+  loo_results[i, "Delta_IR"] <- baseline["IR_Min"] - res_i["IR_Min"] 
+}
+
+# --- 3. DUAL-PANEL VISUALIZATION WITH FULL LABELS ---
+if(interactive()) {
+  dev.new(width=14, height=8)
+  par(mfrow=c(1,1), mar=c(6, 6, 4, 2))
+  y_ir <- loo_results[, "Delta_IR"]
+  bp1 <- barplot(y_ir, 
+                 main="Impact on Physical Stability (Delta IR)\nPositive = System improves when this sample is REMOVED",
+                 col=ifelse(y_ir > 0, "#e74c3c", "#95a5a6"), 
+                 border=NA, names.arg=1:n_total, las=1, cex.names=0.7,
+                 ylab="Stability Gain (Lower IR is better)", xlab="Excluded Sample Index")
+  text(bp1, y_ir, labels=round(y_ir, 4), pos=ifelse(y_ir >= 0, 3, 1), cex=0.6, col="black", xpd=TRUE)
+  abline(h=0, col="black", lwd=1)
+}
+
+# PDF Report Generation
+pdf_filename <- "Stability_Perturbation_Report.pdf"
+pdf(file = pdf_filename, width = 14, height = 8)
+par(mfrow=c(1,1), mar=c(6, 6, 4, 2))
+
+y_ir <- loo_results[, "Delta_IR"]
+bp1 <- barplot(y_ir, 
+               main="Impact on Physical Stability (Delta IR)\nPositive = System improves when this sample is REMOVED",
+               col=ifelse(y_ir > 0, "#e74c3c", "#95a5a6"), 
+               border=NA, names.arg=1:n_total, las=1, cex.names=0.7,
+               ylab="Stability Gain (Lower IR is better)", xlab="Excluded Sample Index")
+text(bp1, y_ir, labels=round(y_ir, 4), pos=ifelse(y_ir >= 0, 3, 1), cex=0.6, col="black", xpd=TRUE)
+abline(h=0, col="black", lwd=1)
+
+dev.off()
+cat(paste0("\n[SUCCESS] PDF report has been generated: ", pdf_filename, "\n"))
+
+# --- 4. FINAL PERTURBATION RANKING ---
+perturber_score <- as.vector(scale(loo_results[, "Delta_IR"]))
+impact_df <- data.frame(
+  Sample_ID = 1:n_total,
+  IR_Impact = round(loo_results[,"Delta_IR"], 6),
+  Normalized_Score = round(perturber_score, 3)
+)
+impact_df <- impact_df[order(-impact_df$Normalized_Score), ]
+
+cat("\n==========================================================\n")
+cat("      STABILITY PERTURBATION REPORT (LEAVE-ONE-OUT)       \n")
+cat("==========================================================\n")
+print(head(impact_df, 20), row.names = FALSE)
+cat("----------------------------------------------------------\n")
+cat("DEFINITION: 'Normalized_Score' reflects how much a sample \n")
+cat("destabilizes the overall compositional baseline.\n")
+cat("==========================================================\n")
+
+# --- 5. AUTOMATED QUALITY ALERT SYSTEM ---
+critical_samples <- impact_df[impact_df$Normalized_Score > 2, ]
+
+if(nrow(critical_samples) > 0) {
+  cat("\n[!] PHYSICAL INTEGRITY ALERT\n")
+  cat("----------------------------------------------------------\n")
+  for(i in 1:nrow(critical_samples)) {
+    cat(sprintf("SAMPLE ID %s: [Score: %.3f]\n", 
+                critical_samples$Sample_ID[i], critical_samples$Normalized_Score[i]))
+    cat(" >> ACTION REQUIRED: Potential biological perturbation, measurement error,\n")
+    cat("    or data entry mismatch detected. Please verify the raw source.\n\n")
+  }
+} else {
+  cat("\n[PASS] No critical physical perturbers detected (Threshold = 2.0).\n")
+}
+cat("==========================================================\n")
