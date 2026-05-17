@@ -1,0 +1,112 @@
+# =================================================================
+# It would be best to determine the detection limit of the measuring instrument 
+# and set a cutoff value 10 times that limit.
+# Developed by: Tatsuki Itagaki
+# Copyright (c) 2026 Tatsuki Itagaki
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, 
+# please cite the following works:
+# Itagaki, T (2026).  DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
+# =================================================================
+
+# --- 1. DATA PREPARATION ---
+P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
+sample_ids <- rownames(P_raw)
+if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
+n_s <- nrow(P_raw)
+n_t <- ncol(P_raw)
+
+# --- TRUE BASE-R LIMIT-SPEED NON-ZERO MINIMUM FINDER ---
+# CRITICAL ADVANCEMENT: Avoid slow order() sorting or split() slicing.
+# Single-pass matrix negation combined with C-optimized max.col() handles millions of rows instantly.
+non_zero_mask <- P_raw > 0
+
+# Find a perfectly safe massive value that is greater than any element in the matrix
+# This prevents 0 values from interfering with the minimum detection
+huge_value <- max(P_raw) + 1.0
+
+# Mask zeros into the huge value instantly within a temporary matrix
+P_temp <- P_raw
+P_temp[!non_zero_mask] <- huge_value
+
+# Find the exact column index of the minimum value for all rows simultaneously via negated max.col
+min_col_idx <- max.col(-P_temp, ties.method = "first")
+
+# High-speed single-pass memory mapping to fetch values using flat vector indexing
+# This avoids any loop operations or data frames conversions entirely
+# You should use instrument_LOD.
+
+# instrument_LOD <- XXXXX
+# full_minima <- rep(instrument_LOD, n_s)
+# names(full_minima) <- sample_ids
+
+full_minima <- P_raw[1:n_s + (min_col_idx - 1) * n_s]
+full_minima[rowSums(non_zero_mask) == 0] <- NA # Safely map completely empty samples
+names(full_minima) <- sample_ids
+
+# Construct reliability status matrix globally without sample-by-sample loops
+rel_status_mat <- matrix(-1, nrow = n_s, ncol = n_t, dimnames = list(sample_ids, colnames(P_raw)))
+rel_status_mat[non_zero_mask] <- 0
+
+# Apply the vectorized sweep operation for the 10x safety margin threshold
+is_reliable <- sweep(P_raw, 1, full_minima * 10, ">=")
+is_reliable[is.na(is_reliable)] <- FALSE
+rel_status_mat[is_reliable & non_zero_mask] <- 1
+
+# --- PRE-CALCULATION OF URT LIST ---
+urt_mask <- colSums(rel_status_mat == 1) == n_s
+urt_list <- colnames(P_raw)[urt_mask]
+
+# --- 2. RELIABILITY HEATMAP (Clean Axis) ---
+pdf("ITAGAKI_2_Reliability_Heatmap.pdf", width = 18, height = 12)
+layout(matrix(c(1, 2), nrow = 1), widths = c(0.88, 0.12))
+overall_rel <- colSums(rel_status_mat == 1)
+sorted_rel_mat <- rel_status_mat[, order(overall_rel, decreasing = TRUE), drop = FALSE]
+plot_rel <- t(sorted_rel_mat[n_s:1, , drop = FALSE])
+
+par(mar = c(15, 12, 5, 2), bg = "#FFFFFF")
+image(1:ncol(sorted_rel_mat), 1:nrow(sorted_rel_mat), plot_rel, 
+      col = c("#D5D8DC", "#F1C40F", "#2980B9"), 
+      axes = FALSE, ann = FALSE)
+
+abline(v = seq(0.5, ncol(sorted_rel_mat) + 0.5, 1), col = "white", lwd = 1)
+abline(h = seq(0.5, nrow(sorted_rel_mat) + 0.5, 1), col = "white", lwd = 1)
+
+axis(1, at = 1:ncol(sorted_rel_mat), labels = colnames(sorted_rel_mat), 
+     las = 2, cex.axis = 0.55, font = 2, tick = FALSE)
+axis(2, at = 1:nrow(sorted_rel_mat), labels = rev(sample_ids), 
+     las = 1, cex.axis = 0.7, tick = FALSE)
+
+title(main = "SYSTEM RELIABILITY MAP (Physical Existence)")
+par(mar = c(0, 0, 0, 0)); plot.new()
+legend("center", legend = c("Reliable", "Uncertain", "Undetected"), 
+       fill = c("#2980B9", "#F1C40F", "#D5D8DC"), bty = "n", title = "Status", cex = 0.9)
+dev.off()
+
+# --- 3. VECTORIZED CALCULATION (NO FOR-LOOP) ---
+vec_detected <- rowSums(non_zero_mask)
+vec_reliable <- rowSums(rel_status_mat == 1)
+vec_uncertain <- vec_detected - vec_reliable
+
+valid_samples <- vec_detected > 0
+
+final_report <- data.frame(
+  Sample_ID = sample_ids[valid_samples],
+  Eff_Lib = 1 / full_minima[valid_samples],
+  Noise_Floor = full_minima[valid_samples],
+  Detected_Taxa = vec_detected[valid_samples],
+  Reliable_Taxa = vec_reliable[valid_samples],
+  Uncertain_Taxa = vec_uncertain[valid_samples]
+)
+
+# --- 4. CONSOLIDATED SUMMARY REPORT ---
+final_report$Uncertainty_Score <- paste0(round((final_report$Uncertain_Taxa / (final_report$Uncertain_Taxa + final_report$Reliable_Taxa)) * 100, 1), "%")
+
+cat("\n==========================================================\n")
+cat("      FINAL SYSTEM RELIABILITY SUMMARY REPORT             \n")
+cat("==========================================================\n")
+print(final_report, row.names = FALSE)
+cat("==========================================================\n")
