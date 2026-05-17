@@ -1,4 +1,6 @@
 # =================================================================
+# It would be best to determine the detection limit of the measuring instrument 
+# and set a cutoff value 10 times that limit.
 # Developed by: Tatsuki Itagaki
 # Saturday, May 9, 2026
 # Copyright (c) 2026 Tatsuki Itagaki
