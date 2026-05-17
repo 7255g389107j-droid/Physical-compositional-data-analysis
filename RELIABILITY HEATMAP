@@ -175,7 +175,6 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
         sub_slice_A <- matrix_slice_A[true_match_mask, , drop = FALSE]
         sub_slice_B <- matrix_slice_B[true_match_mask, , drop = FALSE]
         
-
         diff_matrix <- matrix(abs(sub_slice_A - sub_slice_B), 
                               nrow = length(true_match_mask), 
                               ncol = ncol(sub_slice_A))
@@ -206,7 +205,6 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
           active_components <- which(vals_A > 0 | vals_B > 0)
           
           if (length(active_components) > 0) {
-
             master_forensic_list[[list_idx]] <- data.frame(
               Compare_Pair = rep(paste0("[", sample_ids[row_A_val], " vs ", sample_ids[row_B_val], "]"), times = length(active_components)),
               Component    = as.character(colnames(P_raw)[active_components]),
