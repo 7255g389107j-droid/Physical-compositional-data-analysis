@@ -112,7 +112,7 @@ print(final_report, row.names = FALSE)
 cat("Uncertainty_Score = zero is suspected noise data.\n")
 cat("==========================================================\n")
 
-# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (FINAL MAX-STABLE VERSION) ---
+# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (TRUE PRO-STABLE VERSION) ---
 if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && exists("sample_ids")) {
   
   # 1. Fetch adjacent sample ids to evaluate potential sequence clusters
@@ -203,25 +203,20 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
           
           if (length(active_components) > 0) {
             
-            master_forensic_list[[list_idx]] <- list(
+            master_forensic_list[[list_idx]] <- data.frame(
               Compare_Pair = rep(paste0("[", sample_ids[row_A_val], " vs ", sample_ids[row_B_val], "]"), length(active_components)),
-              Component    = colnames(P_raw)[active_components],
-              Raw_Val_A    = as.vector(vals_A[active_components]),
-              Raw_Val_B    = as.vector(vals_B[active_components])
+              Component    = as.character(colnames(P_raw)[active_components]),
+              Raw_Val_A    = as.numeric(as.vector(vals_A[active_components])),
+              Raw_Val_B    = as.numeric(as.vector(vals_B[active_components])),
+              stringsAsFactors = FALSE
             )
             list_idx <- list_idx + 1
           }
         }
         
         if (length(master_forensic_list) > 0) {
-          
-          master_forensic_db <- data.frame(
-            Compare_Pair = unlist(lapply(master_forensic_list, `[[`, "Compare_Pair")),
-            Component    = unlist(lapply(master_forensic_list, `[[`, "Component")),
-            Raw_Val_A    = unlist(lapply(master_forensic_list, `[[`, "Raw_Val_A")),
-            Raw_Val_B    = unlist(lapply(master_forensic_list, `[[`, "Raw_Val_B")),
-            stringsAsFactors = FALSE
-          )
+       
+          master_forensic_db <- do.call(rbind, master_forensic_list)
           
           cat("Detailed raw value comparison for suspect components (Omnibus Flattened View):\n\n")
           print(master_forensic_db, row.names = FALSE)
