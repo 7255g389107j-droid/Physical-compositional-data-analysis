@@ -112,18 +112,15 @@ print(final_report, row.names = FALSE)
 cat("Uncertainty_Score = zero is suspected noise data.\n")
 cat("==========================================================\n")
 
-# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (BUG-FREE DEFINITIVE VERSION) ---
+# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (ALL-PAIRS OMNIBUS VERSION) ---
 if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && exists("sample_ids")) {
   
-  # 1. Fetch adjacent sample ids to evaluate potential sequence clusters
   sorted_sample_ids <- rownames(sorted_rel_mat)
   n_samples_sorted  <- length(sorted_sample_ids)
   
-  # 2. Re-compute Uncertainty Scores directly from sorted reliability metrics matrix
   sorted_detected  <- rowSums(sorted_rel_mat != -1)
   sorted_reliable  <- rowSums(sorted_rel_mat == 1)
   
-  # Calculate final percentage scores safely avoiding NA injections
   sorted_scores <- rep(-1, times = n_samples_sorted)
   valid_idx     <- which(sorted_detected > 0)
   
@@ -131,32 +128,30 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
     sorted_scores[valid_idx] <- round(((sorted_detected[valid_idx] - sorted_reliable[valid_idx]) / sorted_detected[valid_idx]) * 100, 1)
   }
   
-  # 3. Detect adjacent score duplicates inside 1D array stream
-  idx_A <- 1:(n_samples_sorted - 1)
-  idx_B <- 2:n_samples_sorted
+  all_pairs_idx <- combn(n_samples_sorted, 2)
+  idx_A <- all_pairs_idx[1, ]
+  idx_B <- all_pairs_idx[2, ]
   
-  is_adjacent_score_match <- which((sorted_scores[idx_A] == sorted_scores[idx_B]) & (sorted_scores[idx_A] != -1))
+  is_all_score_match <- which((sorted_scores[idx_A] == sorted_scores[idx_B]) & (sorted_scores[idx_A] != -1))
   
   # === TRUE EARLY PASS ===
-  if (length(is_adjacent_score_match) == 0) {
+  if (length(is_all_score_match) == 0) {
     cat("\n==========================================================\n")
     cat("          FORENSIC INTEGRITY PASS REPORT                  \n")
     cat("==========================================================\n")
-    cat("No identical Uncertainty_Scores detected among adjacent samples.\n")
+    cat("No identical Uncertainty_Scores detected among ANY sample pairs.\n")
     cat("All individual stochastic fluctuations are preserved normally.\n")
     cat("==========================================================\n")
   } else {
-    # === CRITICAL SECURITY ALERT TRIPPED ===
     cat("\n==========================================================\n")
-    cat("     CRITICAL SECURITY ALERT: SUSTAINED PATTERN MATCH      \n")
+    cat("    CRITICAL SECURITY ALERT: OMNIBUS PATTERN MATCH TRIPPED \n")
     cat("==========================================================\n")
-    cat("Identical physical existence profiles detected instantly via 1D C-Hash Filtering.\n")
+    cat(sprintf("Identical existence profiles detected across %d pairs instantly via All-Pairs C-Filtering.\n", length(is_all_score_match)))
     cat("Human visual inspection of the Reliability Heatmap is MANDATORY.\n")
     cat("Verifying raw values within P_raw for fabrication detection...\n\n")
     
-    # 4. Map directly against standard sample_ids vector to block NULL rownames crash
-    raw_row_map_A <- match(sorted_sample_ids[is_adjacent_score_match], sample_ids)
-    raw_row_map_B <- match(sorted_sample_ids[is_adjacent_score_match + 1], sample_ids)
+    raw_row_map_A <- match(sorted_sample_ids[idx_A[is_all_score_match]], sample_ids)
+    raw_row_map_B <- match(sorted_sample_ids[idx_B[is_all_score_match]], sample_ids)
     
     valid_pairs <- which(!is.na(raw_row_map_A) & !is.na(raw_row_map_B))
     
@@ -167,7 +162,7 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
       matrix_slice_A <- P_raw[idx_A_nums, , drop = FALSE]
       matrix_slice_B <- P_raw[idx_B_nums, , drop = FALSE]
       
-      # Axis 1: Structural duplicate fraud (Zeros vs Non-Zeros topology sync)
+      # Axis 1:（Zeros vs Non-Zeros）
       is_pattern_dup <- rowSums((matrix_slice_A > 0) != (matrix_slice_B > 0)) == 0
       true_match_mask <- which(is_pattern_dup)
       
@@ -191,7 +186,7 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
         print(alert_summary, right = FALSE, row.names = FALSE)
         cat("----------------------------------------------------------\n")
         
-        # 6. Deep Dive Report into Suspect Components
+        # --- 6. DEEP DIVE REPORT INTO SUSPECT COMPONENTS ---
         master_forensic_list <- list()
         list_idx <- 1
         
@@ -223,13 +218,13 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
           cat("Detailed raw value comparison for suspect components (Omnibus Flattened View):\n\n")
           print(master_forensic_db, row.names = FALSE)
         } else {
-          cat("\n[INFO] Adjacent patterns match but no non-zero active components found.\n")
+          cat("\n[INFO] Identified patterns match but no non-zero active components found.\n")
         }
       } else {
-        cat("\n[INFO] Adjacent patterns match but no identical raw values confirmed.\n")
+        cat("\n[INFO] Identified scores match but no identical raw values or topology confirmed.\n")
       }
     } else {
-      cat("\n[INFO] Adjacent scores match but no valid data rows available for matrix verification.\n")
+      cat("\n[INFO] Identified scores match but no valid data rows available for matrix verification.\n")
     }
     cat("==========================================================\n")
   }
