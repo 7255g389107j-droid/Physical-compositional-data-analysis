@@ -112,7 +112,7 @@ print(final_report, row.names = FALSE)
 cat("Uncertainty_Score = zero is suspected noise data.\n")
 cat("==========================================================\n")
 
-# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (TRUE PRO-STABLE VERSION) ---
+# --- 5. FORENSIC PATTERN AND COPY-PASTE DETECTOR (BUG-FREE DEFINITIVE VERSION) ---
 if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && exists("sample_ids")) {
   
   # 1. Fetch adjacent sample ids to evaluate potential sequence clusters
@@ -175,7 +175,11 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
         sub_slice_A <- matrix_slice_A[true_match_mask, , drop = FALSE]
         sub_slice_B <- matrix_slice_B[true_match_mask, , drop = FALSE]
         
-        is_copy_paste <- rowSums(abs(sub_slice_A - sub_slice_B) > 1e-9) == 0
+
+        diff_matrix <- matrix(abs(sub_slice_A - sub_slice_B), 
+                              nrow = length(true_match_mask), 
+                              ncol = ncol(sub_slice_A))
+        is_copy_paste <- rowSums(diff_matrix > 1e-9) == 0
         
         s1_names <- sample_ids[idx_A_nums[true_match_mask]]
         s2_names <- sample_ids[idx_B_nums[true_match_mask]]
@@ -202,9 +206,9 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
           active_components <- which(vals_A > 0 | vals_B > 0)
           
           if (length(active_components) > 0) {
-            
+
             master_forensic_list[[list_idx]] <- data.frame(
-              Compare_Pair = rep(paste0("[", sample_ids[row_A_val], " vs ", sample_ids[row_B_val], "]"), length(active_components)),
+              Compare_Pair = rep(paste0("[", sample_ids[row_A_val], " vs ", sample_ids[row_B_val], "]"), times = length(active_components)),
               Component    = as.character(colnames(P_raw)[active_components]),
               Raw_Val_A    = as.numeric(as.vector(vals_A[active_components])),
               Raw_Val_B    = as.numeric(as.vector(vals_B[active_components])),
@@ -215,8 +219,8 @@ if (exists("sorted_rel_mat") && nrow(sorted_rel_mat) > 1 && exists("P_raw") && e
         }
         
         if (length(master_forensic_list) > 0) {
-       
           master_forensic_db <- do.call(rbind, master_forensic_list)
+          rownames(master_forensic_db) <- NULL
           
           cat("Detailed raw value comparison for suspect components (Omnibus Flattened View):\n\n")
           print(master_forensic_db, row.names = FALSE)
