@@ -22,6 +22,10 @@ n_t <- ncol(P_raw)
 
 # --- FAST VECTORIZED COHERENCE CALCULATION ---
 # Find sample-specific minima for non-zero entries efficiently
+# You should use instrument_LOD.
+# instrument_LOD <- XXXXX
+# sample_minima <- rep(instrument_LOD, n_s)
+# names(sample_minima) <- sample_ids
 sample_minima <- apply(P_raw, 1, function(x) {
   nz <- x[x > 0]
   if(length(nz) > 0) min(nz) else NA
