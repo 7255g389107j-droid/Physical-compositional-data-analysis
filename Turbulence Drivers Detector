@@ -1,5 +1,7 @@
 # ==============================================================================
 # ITAGAKI-SYSTEM: COMPONENT STABILITY EVALUATOR (PHYSICAL DEVIATION ENGINE)
+# Use only to distinguish between artificial and natural data.
+# The Invariance Ratio (IR) for natural data is meaningless.
 # Developed by: Tatsuki Itagaki
 # Sunday, May 17, 2026
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
