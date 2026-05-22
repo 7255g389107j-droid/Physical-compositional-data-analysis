@@ -1,5 +1,5 @@
 # ==============================================================================
-# SAMPLING PHYSICS & ALGEBRAIC IDENTIFIABILITY VALIDATION ENGINE (FINAL PERFECT)
+# SAMPLING PHYSICS & ALGEBRAIC IDENTIFIABILITY VALIDATION ENGINE (ALL-PAIR TRUE)
 # Core Theory: wt >= Z_alpha^2 * (pi_i + pi_j) / (pi_i - pi_j)^2
 # Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
@@ -34,7 +34,7 @@ row_totals <- rowSums(P_raw)
 row_totals[row_totals == 0] <- 1  
 Pi_mat <- P_raw / row_totals
 
-# UNIFIED DIGITAL RESOLUTION INVERSION (Strict Mathematical Defense)
+# UNIFIED DIGITAL RESOLUTION INVERSION
 is_raw_counts <- any(row_totals > 1.01)
 if(is_raw_counts) {
   eff_lib_size <- row_totals
@@ -42,60 +42,77 @@ if(is_raw_counts) {
   eff_lib_size <- 1 / full_minima
 }
 
-# --- 4. ANALYTICAL PAIRWISE ENGINE (pi_i > pi_j Verification) ---
+# --- 4. TRUE ALL-PAIRWISE PHYSICS ENGINE (Dynamic Worst-Case Extraction) ---
 alpha_input <- 0.01 
 z_alpha_in  <- abs(qnorm(alpha_input / 2))
 
-# 4a. Capture the largest component (pi_i) per row
-Pi_temp_max <- Pi_mat
-idx_i   <- max.col(Pi_temp_max, ties.method = "first")
-pi_i    <- Pi_temp_max[1:n_s + (idx_i - 1) * n_s]
+# CRITICAL ADVANCEMENT: Scan ALL adjacent sorted pairs per row using high-speed margin apply
+# This instantly calculates the required_wt for EVERY adjacent pair in the entire composition space.
+# We then mathematically extract the TRUE absolute maximum required_wt per row.
 
-# 4b. Mask the largest component to instantly capture the second largest component (pi_j)
-Pi_temp_max[1:n_s + (idx_i - 1) * n_s] <- -1.0
-idx_j   <- max.col(Pi_temp_max, ties.method = "first")
-pi_j    <- Pi_temp_max[1:n_s + (idx_j - 1) * n_s]
+calc_true_worst_bounds <- function(pi_row) {
+  # Keep only non-zero components and sort them in ascending order
+  nz_pi <- sort(pi_row[pi_row > 0])
+  len <- length(nz_pi)
+  
+  if (len < 2) return(c(NA, NA, NA, NA)) # Insufficient components
+  
+  # Calculate adjacent differences and sums for ALL pairs simultaneously
+  pi_j_vec <- nz_pi[1:(len - 1)]
+  pi_i_vec <- nz_pi[2:len]
+  
+  deltas <- pi_i_vec - pi_j_vec
+  sums   <- pi_i_vec + pi_j_vec
+  
+  # Handle absolute ties mathematically
+  deltas[deltas == 0] <- 1e-9
+  
+  # Compute Required wt across ALL components in this row
+  all_required_wts <- (z_alpha_in^2) * sums / (deltas^2)
+  
+  # Identify the index of the absolute worst case (where required_wt is maximized)
+  worst_idx <- which.max(all_required_wts)
+  
+  # Extract the true worst parameters
+  true_worst_wt    <- all_required_wts[worst_idx]
+  true_worst_delta <- deltas[worst_idx]
+  
+  # Best case parameters (Maximum span: Max component vs Non-zero Min component)
+  best_delta    <- nz_pi[len] - nz_pi[1]
+  best_sum      <- nz_pi[len] + nz_pi[1]
+  if(best_delta == 0) best_delta <- 1e-9
+  true_best_wt  <- (z_alpha_in^2) * best_sum / (best_delta^2)
+  
+  return(c(true_worst_wt, true_worst_delta, true_best_wt, best_delta))
+}
 
-# 4c. ADVANCED MATRIX MAPPING FOR MAX_MAJOR_DELTA
-# Find the global absolute minimum non-zero proportion per row instantly
-Pi_temp_min <- Pi_mat
-Pi_temp_min[!non_zero_mask] <- huge_value
-idx_absolute_min <- max.col(-Pi_temp_min, ties.method = "first")
-pi_absolute_min  <- Pi_mat[1:n_s + (idx_absolute_min - 1) * n_s]
+# Execute the high-speed row-wise parallel scan matrix mapping
+bounds_matrix <- t(apply(Pi_mat, 1, calc_true_worst_bounds))
 
-# Compute Max_Major_Delta (Maximum distance between highest component and lowest non-zero component)
-max_major_delta <- pi_i - pi_absolute_min
-
-# 4d. Rigid guards against insufficient degrees of freedom
-has_insufficient_comps <- (pi_i <= 0 | pi_j <= 0 | rowSums(non_zero_mask) < 2)
-pi_i[has_insufficient_comps] <- NA
-pi_j[has_insufficient_comps] <- NA
-max_major_delta[has_insufficient_comps] <- NA
-
-is_tie <- (!is.na(pi_i) & !is.na(pi_j) & (pi_i == pi_j))
-pi_i[is_tie] <- pi_i[is_tie] + (1e-9 / eff_lib_size[is_tie])
+required_wt_strict    <- bounds_matrix[, 1]
+min_major_delta       <- bounds_matrix[, 2]
+required_wt_lenient    <- bounds_matrix[, 3]
+max_major_delta       <- bounds_matrix[, 4]
 
 # --- 5. VECTORIZED MATHEMATICAL INVERSION ---
-required_scale <- 1 / (pi_i - pi_j)
-required_wt    <- (z_alpha_in^2) * (pi_i + pi_j) / (pi_i - pi_j)^2
+required_scale_strict  <- 1 / min_major_delta
+required_scale_lenient <- 1 / max_major_delta
 
-z_sq_back      <- eff_lib_size * ((pi_i - pi_j)^2) / (pi_i + pi_j)
-z_back         <- sqrt(pmax(0, z_sq_back))
-alpha_back     <- pnorm(-z_back) * 2
-safe_level_pct <- (1 - alpha_back) * 100
-
-required_scale[has_insufficient_comps] <- NA
-required_wt[has_insufficient_comps]    <- NA
-safe_level_pct[has_insufficient_comps] <- NA
+z_sq_back_strict      <- eff_lib_size * (min_major_delta^2) / (required_wt_strict * (min_major_delta^2) / (z_alpha_in^2)) # Mathematical simplification
+# Direct reverse-engineering of alpha based on actual eff_lib_size vs true worst-case parameters
+# Formula: Z_back = sqrt(eff_lib_size * delta^2 / sum) -> since required_wt = Z^2 * sum / delta^2 -> sum/delta^2 = required_wt / Z^2
+z_sq_back_strict      <- eff_lib_size * (z_alpha_in^2) / required_wt_strict
+z_back_strict         <- sqrt(pmax(0, z_sq_back_strict))
+alpha_back_strict     <- pnorm(-z_back_strict) * 2
+safe_level_pct_strict <- (1 - alpha_back_strict) * 100
 
 # --- 6. RIGID PHYSICS-BASED FILTERING ENGINE (DIMENSION-SAFE & FULLY VECTORIZED) ---
 rel_status_mat <- matrix(-1, nrow = n_s, ncol = n_t, dimnames = list(sample_ids, colnames(P_raw)))
 rel_status_mat[non_zero_mask] <- 0
 
-# True physical criteria check: Identification of safe rows
-sample_is_safe <- (!is.na(required_wt) & (eff_lib_size >= required_wt))
+# Identification of safe rows using the TRUE absolute worst-case required_wt boundary
+sample_is_safe <- (!is.na(required_wt_strict) & (eff_lib_size >= required_wt_strict))
 
-# Use matrix subsetting with drop = FALSE to prevent 1-row vector collapse bug
 if (any(sample_is_safe)) {
   safe_mask <- non_zero_mask[sample_is_safe, , drop = FALSE]
   replacement_values <- matrix(0, nrow = sum(sample_is_safe), ncol = n_t)
@@ -103,27 +120,26 @@ if (any(sample_is_safe)) {
   rel_status_mat[sample_is_safe, ] <- replacement_values
 }
 
-# Pre-calculate Universal Reliable Targets (URT List across all dimensions)
 urt_mask <- colSums(rel_status_mat == 1) == n_s
 urt_list <- colnames(P_raw)[urt_mask]
 
 # --- 7. REPORT CONSTRUCTION & LOGGING ---
 Analysis_Report <- data.frame(
-  Sample_ID               = sample_ids,
-  Effective_Library_Size  = eff_lib_size,
-  Min_Major_Delta         = pi_i - pi_j,
-  Max_Major_Delta         = max_major_delta,
-  Required_Scale          = required_scale,
-  Required_wt_at_Alpha    = required_wt,
-  Safe_Evaluation_Percent = safe_level_pct,
-  row.names               = 1
+  Sample_ID                = sample_ids,
+  Effective_Library_Size   = eff_lib_size,
+  Required_Scale_Strict    = required_scale_strict,
+  Required_wt_Strict_Worst = required_wt_strict,
+  Required_Scale_Lenient   = required_scale_lenient,
+  Required_wt_Lenient_Best = required_wt_lenient,
+  Safe_Evaluation_Percent  = safe_level_pct_strict,
+  row.names                = 1
 )
 
 # Output Execution Results
 print("========================================================================")
-print("             BLAZING FAST ANALYTICAL PHYSICS REPORT                     ")
+print("             TRUE ALL-PAIRWISE PHYSICS BOUNDS REPORT                     ")
 print("========================================================================")
-print(head(Analysis_Report, n = n_s))
+print(head(Analysis_Report, n = 100))
 
 print("========================================================================")
 print("             UNIVERSAL RELIABLE TARGETS (URT LIST VIA Z_ALPHA)          ")
