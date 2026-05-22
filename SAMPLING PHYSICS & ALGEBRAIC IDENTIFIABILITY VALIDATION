@@ -123,7 +123,7 @@ Analysis_Report <- data.frame(
 print("========================================================================")
 print("             BLAZING FAST ANALYTICAL PHYSICS REPORT                     ")
 print("========================================================================")
-print(head(Analysis_Report, n = 10))
+print(head(Analysis_Report, n = n_s))
 
 print("========================================================================")
 print("             UNIVERSAL RELIABLE TARGETS (URT LIST VIA Z_ALPHA)          ")
