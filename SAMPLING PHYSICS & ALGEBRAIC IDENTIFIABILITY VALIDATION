@@ -47,7 +47,7 @@ if(is_raw_counts) {
 
 # --- 4. ANALYTICAL PAIRWISE ENGINE (pi_i > pi_j Verification) ---
 alpha_input <- 0.01 
-z_alpha_in  <- abs(qnorm(alpha_input))
+z_alpha_in  <- abs(qnorm(alpha_input/2))
 
 Pi_temp <- Pi_mat
 idx_i   <- max.col(Pi_temp, ties.method = "first")
