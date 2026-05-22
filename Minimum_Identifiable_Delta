@@ -2,6 +2,8 @@
 # ITAGAKI-SYSTEM: PHYSICAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE (COMPLETE)
 # Core Theory: Delta_min = Z_alpha * sqrt( (pi_i + pi_j) / Effective_Library_Size )
 # Evaluates if ALL Actual_Observed_Delta >= Minimum_Identifiable_Delta
+# The mean number of reads in nanopore sequencing was 53731, 
+# with detection limit calculated from this number at 0.00186%
 # Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
 # License: MIT License (https://opensource.org)
