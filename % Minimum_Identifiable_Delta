@@ -1,7 +1,8 @@
 # ==============================================================================
-# CORRECTED MULTINOMIAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE
-# Corrected Formula: Delta_min = Z_alpha * sqrt( (pi_i + pi_j - (pi_i - pi_j)^2) / reads_input )
-# Developed by: Tatsuki Itagaki (Revised for Statistical Rigor)
+# RIGOROUS MULTINOMIAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE (PRODUCTION)
+# Formula: Delta_min = Z_alpha * sqrt( (pi_i + pi_j - (pi_i - pi_j)^2) / reads_input )
+# Developed by: Tatsuki Itagaki (Revised for Absolute Structural Rigor)
+# Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
 # ==============================================================================
 
 # --- [USER CONFIGURATION] MANUAL SETTINGS ---
@@ -9,7 +10,7 @@ alpha_input         <- 0.001
 reads_input         <- 53731  
 
 # --- INTERNAL PARAMETER ANCHOR ---
-z_alpha_in <- abs(qnorm(alpha_input / 2))
+z_alpha_in     <- abs(qnorm(alpha_input / 2))
 fixed_lod_gate <- (1 / reads_input) * 10 
 
 # --- 1. DATA PREPARATION ---
@@ -27,38 +28,37 @@ eff_lib_size <- rep(reads_input, n_s)
 # --- 3. ROW-WISE VECTORIZED RESOLUTION DETERMINATION JUDGE ---
 calc_minimum_identifiable_bounds <- function(pi_row, current_wt, z_val, lod_gate) {
   nz_pi <- pi_row[pi_row > 0]
-  if (length(nz_pi) < 2) return(c(length(nz_pi), NA, NA, 0)) 
+  if (length(nz_pi) < 2) return(c(as.numeric(length(nz_pi)), as.numeric(NA), as.numeric(NA), 0)) 
   
   major_pi <- sort(nz_pi[nz_pi >= lod_gate])
   len_major <- length(major_pi)
-  if (len_major < 2) return(c(len_major, NA, NA, 0))
   
-  pi_j_vec <- major_pi[1:(len_major - 1)]
-  pi_i_vec <- major_pi[2:len_major]
+  # Strict Type-Safe Guard to prevent down-stream processing errors
+  if (len_major < 2) return(c(as.numeric(len_major), as.numeric(NA), as.numeric(NA), 0))
+  
+  # VECTORS SAFE SLICING: Replaced colon operator to block runtime bounds overflow
+  pi_j_vec <- major_pi[-len_major] 
+  pi_i_vec <- major_pi[-1]         
   
   observed_deltas <- pi_i_vec - pi_j_vec
   adjacent_sums   <- pi_i_vec + pi_j_vec
   
-  # ============================================================================
-  # ✅ MATHEMATICAL CORRECTION (STATISTICALLY RIGOROUS MULTINOMIAL VARIANCE)
-  # 1. current_wt (N) is now correctly placed INSIDE the sqrt() function.
-  # 2. Covariance factor for compositional simplex data is integrated.
-  # ============================================================================
+  # MATHEMATICAL CORRECTION (STATISTICALLY RIGOROUS MULTINOMIAL VARIANCE)
   multinomial_variance <- (adjacent_sums - (observed_deltas^2)) / current_wt
   critical_min_deltas  <- z_val * sqrt(multinomial_variance)
-  # ============================================================================
   
   all_pairs_passed <- all(observed_deltas >= critical_min_deltas)
   is_fully_determined <- if(all_pairs_passed) 1 else 0
   
+  # Safe extraction of bottleneck metrics
   worst_pair_idx             <- which.max(critical_min_deltas)
   max_critical_delta         <- critical_min_deltas[worst_pair_idx]
   actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
   
-  return(c(len_major, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
+  return(c(as.numeric(len_major), max_critical_delta, actual_observed_at_minimum, is_fully_determined))
 }
 
-# EXECUTE WITH RIGOROUS MATH
+# EXECUTE WITH RIGOROUS TYPE-SAFE VECTOR QUANTIZATION
 resolution_matrix <- t(vapply(1:n_s, function(i) {
   calc_minimum_identifiable_bounds(Pi_mat[i, ], eff_lib_size[i], z_alpha_in, fixed_lod_gate)
 }, FUN.VALUE = numeric(4)))
