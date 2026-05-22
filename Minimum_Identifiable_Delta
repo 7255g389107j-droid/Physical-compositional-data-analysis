@@ -13,7 +13,7 @@
 # ==============================================================================
 
 # --- [USER CONFIGURATION] STRICTNESS ALPHA ANCHOR ---
-alpha_input <- 0.01  # Set to 0.001 for extreme 0.1% strictness window
+alpha_input <- 0.001  # Set to 0.01 for 1% window
 z_alpha_in  <- abs(qnorm(alpha_input / 2))
 
 # --- 1. DATA PREPARATION & NOISE FLOOR EXTRACTION ---
