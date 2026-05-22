@@ -1,8 +1,8 @@
 # ==============================================================================
-# ITAGAKI-SYSTEM: COMPOSITIONAL RESOLUTION ENGINE (TRUE COMPOSITIONAL SHANNON LIMIT)
+# ITAGAKI-SYSTEM: TRUE PHYSICAL RESOLUTION ENGINE (ALL-PAIRS COMBINATION EXTENSION)
 # Core Equation: Delta_min = sqrt( (Z_alpha^2 * (pi_i + pi_j)) / (wt + Z_alpha^2) )
-# Focus: Direct independent contrast between Physical Resolution Floor and Signal Delta
-# Developed by: Tatsuki Itagaki (Eliminated Circular Variance Bias)
+# Method: Exhaustive All-Pairs SNR Validation (Completely Eliminates Sort Bias)
+# Developed by: Tatsuki Itagaki (Absolute Mathematical & Structural Rigor)
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
 # ==============================================================================
 
@@ -15,80 +15,91 @@ z_alpha_in     <- abs(qnorm(alpha_input / 2))
 z_sq           <- z_alpha_in^2
 fixed_lod_gate <- (1 / reads_input) * 10 
 
-# --- 1. DATA PREPARATION ---
+# --- 1. DATA PREPARATION & AUTO-NAMING ---
 P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
 sample_ids <- rownames(P_raw)
 if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
+comp_ids <- colnames(P_raw)
+if(is.null(comp_ids)) comp_ids <- paste0("C_", 1:ncol(P_raw))
+colnames(Pi_mat) <- comp_ids
+
 n_s <- nrow(P_raw)
 
-# --- 2. EXACT COMPOSITION MAPPING ---
+# --- 2. EXACT COMPOSITION MAPPING (Unit-Sum Closure) ---
 row_totals <- rowSums(P_raw)
 Pi_mat     <- P_raw / ifelse(row_totals == 0, 1, row_totals)
 if (any(row_totals > 1.05)) Pi_mat <- P_raw / 100
 
-# --- 3. ROW-WISE VECTORIZED RESOLUTION RESOLVER (TRUE SHANNON BOUNDS) ---
-calc_composition_resolution_bounds <- function(pi_row, target_wt, z_sq_val, lod_gate) {
-  nz_pi <- pi_row[pi_row > 0]
-  if (length(nz_pi) < 2) {
-    return(c(as.numeric(length(nz_pi)), as.numeric(NA), as.numeric(NA), as.numeric(NA), 0))
-  }
+# --- 3. EXHAUSTIVE ALL-PAIRS COMPOSITIONAL RESOLUTION LIMIT RESOLVER ---
+calc_all_pairs_resolution_bounds <- function(pi_row, comp_names, target_wt, z_sq_val, lod_gate) {
+  # Extract names and values for active components passing the LOD gate
+  active_mask <- pi_row >= lod_gate
+  major_pi    <- pi_row[active_mask]
+  major_names <- comp_names[active_mask]
+  len_major   <- length(major_pi)
   
-  major_pi <- sort(nz_pi[nz_pi >= lod_gate])
-  len_major <- length(major_pi)
   if (len_major < 2) {
-    return(c(as.numeric(len_major), as.numeric(NA), as.numeric(NA), as.numeric(NA), 0))
+    return(list(len_major = len_major, snr = NA, crit = NA, obs = NA, label = "None", passed = 0))
   }
   
-  pi_j_vec <- major_pi[-len_major] 
-  pi_i_vec <- major_pi[-1]         
+  # Generate ALL possible combinations (Total Exhaustive Grid)
+  pair_indices <- combn(len_major, 2)
+  idx_1 <- pair_indices[1, ]
+  idx_2 <- pair_indices[2, ]
   
-  observed_deltas <- pi_i_vec - pi_j_vec
-  adjacent_sums   <- pi_i_vec + pi_j_vec
+  pi_1 <- major_pi[idx_1]
+  pi_2 <- major_pi[idx_2]
   
-  # ============================================================================
-  # THE TRUE PHYSICAL RESOLUTION LIMIT (SHANNON BOUNDS)
-  # Derived analytically by solving the quadratic equation: Delta = Z * sqrt((S - Delta^2)/wt)
-  # This isolates Delta_min as a pure property of the sampling window (wt) and component mass.
-  # ============================================================================
+  # Absolute value representation of Signal and Sum Space
+  observed_deltas <- abs(pi_1 - pi_2)
+  adjacent_sums   <- pi_1 + pi_2
+  
+  # TRUE PHYSICAL RESOLUTION LIMIT (SHANNON BOUNDS) VIA ANALYTICAL CLOSED-FORM
   critical_min_deltas <- sqrt((z_sq_val * adjacent_sums) / (target_wt + z_sq_val))
-  # ============================================================================
-  
   critical_min_deltas[critical_min_deltas == 0] <- 1e-10
   
-  # Calculate Signal-to-Noise Ratio based on TRUE Physical Bounds
+  # Evaluate pure Signal-to-Noise Ratio for ALL pairs
   snr_vectors <- observed_deltas / critical_min_deltas
   
   all_pairs_passed <- all(snr_vectors >= 1.0)
   is_fully_determined <- if(all_pairs_passed) 1 else 0
   
-  # Extract the absolute structural bottleneck of the sample
-  worst_pair_idx             <- which.min(snr_vectors)
-  bottleneck_snr             <- snr_vectors[worst_pair_idx]
-  max_critical_delta         <- critical_min_deltas[worst_pair_idx]
-  actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
+  # Extract the ABSOLUTE WORST CRITICAL BOTTLENECK across the entire matrix
+  worst_idx                  <- which.min(snr_vectors)
+  bottleneck_snr             <- snr_vectors[worst_idx]
+  max_critical_delta         <- critical_min_deltas[worst_idx]
+  actual_observed_at_minimum <- observed_deltas[worst_idx]
   
-  return(c(as.numeric(len_major), bottleneck_snr, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
+  # Map index back to strict Component Labels for auditing
+  bottleneck_label <- paste0(major_names[idx_1[worst_idx]], " vs ", major_names[idx_2[worst_idx]])
+  
+  return(list(
+    len_major = len_major, bottleneck_snr = bottleneck_snr, 
+    max_crit = max_critical_delta, actual_obs = actual_observed_at_minimum, 
+    label = bottleneck_label, passed = is_fully_determined
+  ))
 }
 
-# EXECUTE WITH RIGOROUS PHYSICAL LOGIC
-resolution_matrix <- t(vapply(1:n_s, function(i) {
-  calc_composition_resolution_bounds(Pi_mat[i, ], reads_input, z_sq, fixed_lod_gate)
-}, FUN.VALUE = numeric(5)))
+# --- 4. ENGINE EXECUTION VIA STRUCTURAL LIST AGGREGATION ---
+raw_results <- lapply(1:n_s, function(i) {
+  calc_all_pairs_resolution_bounds(Pi_mat[i, ], comp_ids, reads_input, z_sq, fixed_lod_gate)
+})
 
-# --- 4. ENGINE REPORT CONSTRUCTION ---
+# --- 5. ENGINE REPORT CONSTRUCTION & TYPE CASTING ---
 Resolution_Report <- data.frame(
   Sample_ID                        = sample_ids,
-  Surviving_Major_Components       = resolution_matrix[, 1],
-  Bottleneck_SNR                   = resolution_matrix[, 2], 
-  Bottleneck_Critical_Delta        = resolution_matrix[, 3], # The PURE independent Delta_min
-  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 4], # The actual observed delta
-  Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 5]),
+  Surviving_Major_Components       = vapply(raw_results, function(x) x$len_major, numeric(1)),
+  Bottleneck_SNR                   = vapply(raw_results, function(x) x$bottleneck_snr, numeric(1)),
+  Bottleneck_Critical_Delta        = vapply(raw_results, function(x) x$max_crit, numeric(1)),
+  Actual_Observed_Delta_At_Minimum = vapply(raw_results, function(x) x$actual_obs, numeric(1)),
+  Worst_Bottleneck_Component_Pair  = vapply(raw_results, function(x) x$label, character(1)),
+  Is_Rank_Fully_Determined         = as.logical(vapply(raw_results, function(x) x$passed, numeric(1))),
   row.names                        = 1
 )
 
-# --- 5. TERMINAL OUTPUT GENERATION ---
+# --- 6. TERMINAL OUTPUT GENERATION ---
 cat("\n========================================================================\n")
-cat("   ITAGAKI-SYSTEM: TRUE PHYSICAL COMPOSITIONAL RESOLUTION LIMIT REPORT  \n")
+cat("   ITAGAKI-SYSTEM: TRUE PHYSICAL RESOLUTION REPORT (ALL-PAIRS GRID)     \n")
 cat("========================================================================\n")
 print(head(Resolution_Report, n = 100))
 cat("========================================================================\n")
