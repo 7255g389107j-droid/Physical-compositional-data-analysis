@@ -1,5 +1,5 @@
 # ==============================================================================
-# SAMPLING PHYSICS & ALGEBRAIC IDENTIFIABILITY VALIDATION ENGINE (ALL-PAIR TRUE)
+# SAMPLING PHYSICS & ALGEBRAIC IDENTIFIABILITY VALIDATION ENGINE (POST-CUTOFF TRUE)
 # Core Theory: wt >= Z_alpha^2 * (pi_i + pi_j) / (pi_i - pi_j)^2
 # Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
@@ -42,24 +42,29 @@ if(is_raw_counts) {
   eff_lib_size <- 1 / full_minima
 }
 
-# --- 4. TRUE ALL-PAIRWISE PHYSICS ENGINE (Dynamic Worst-Case Extraction) ---
+# --- 4. TRUE POST-CUTOFF ALL-PAIRWISE PHYSICS ENGINE ---
 alpha_input <- 0.01 
 z_alpha_in  <- abs(qnorm(alpha_input / 2))
 
-# CRITICAL ADVANCEMENT: Scan ALL adjacent sorted pairs per row using high-speed margin apply
-# This instantly calculates the required_wt for EVERY adjacent pair in the entire composition space.
-# We then mathematically extract the TRUE absolute maximum required_wt per row.
-
-calc_true_worst_bounds <- function(pi_row) {
-  # Keep only non-zero components and sort them in ascending order
-  nz_pi <- sort(pi_row[pi_row > 0])
-  len <- length(nz_pi)
+calc_post_cutoff_worst_bounds <- function(pi_row) {
+  # Find non-zero elements
+  nz_pi <- pi_row[pi_row > 0]
+  if (length(nz_pi) < 2) return(c(NA, NA, NA, NA))
   
-  if (len < 2) return(c(NA, NA, NA, NA)) # Insufficient components
+  # CRITICAL CORRECTION: Apply the 10x safety cutoff baseline FIRST
+  # Keep ONLY components that are >= 10 times the row's absolute non-zero minimum (LOD)
+  pi_min_observed <- min(nz_pi)
+  cutoff_threshold <- pi_min_observed * 10
+  major_pi <- sort(nz_pi[nz_pi >= cutoff_threshold])
   
-  # Calculate adjacent differences and sums for ALL pairs simultaneously
-  pi_j_vec <- nz_pi[1:(len - 1)]
-  pi_i_vec <- nz_pi[2:len]
+  len_major <- length(major_pi)
+  
+  # If less than 2 major components survive the rigid cutoff, the sample cannot be evaluated
+  if (len_major < 2) return(c(NA, NA, NA, NA))
+  
+  # Calculate adjacent differences and sums ONLY for the surviving major components
+  pi_j_vec <- major_pi[1:(len_major - 1)]
+  pi_i_vec <- major_pi[2:len_major]
   
   deltas <- pi_i_vec - pi_j_vec
   sums   <- pi_i_vec + pi_j_vec
@@ -67,27 +72,25 @@ calc_true_worst_bounds <- function(pi_row) {
   # Handle absolute ties mathematically
   deltas[deltas == 0] <- 1e-9
   
-  # Compute Required wt across ALL components in this row
+  # Compute Required wt across ALL major adjacent components in this row
   all_required_wts <- (z_alpha_in^2) * sums / (deltas^2)
   
-  # Identify the index of the absolute worst case (where required_wt is maximized)
-  worst_idx <- which.max(all_required_wts)
-  
-  # Extract the true worst parameters
+  # Identify the true worst case among the major components
+  worst_idx        <- which.max(all_required_wts)
   true_worst_wt    <- all_required_wts[worst_idx]
   true_worst_delta <- deltas[worst_idx]
   
-  # Best case parameters (Maximum span: Max component vs Non-zero Min component)
-  best_delta    <- nz_pi[len] - nz_pi[1]
-  best_sum      <- nz_pi[len] + nz_pi[1]
+  # Best case parameters (Maximum span: Max major component vs Min major component)
+  best_delta   <- major_pi[len_major] - major_pi[1]
+  best_sum     <- major_pi[len_major] + major_pi[1]
   if(best_delta == 0) best_delta <- 1e-9
-  true_best_wt  <- (z_alpha_in^2) * best_sum / (best_delta^2)
+  true_best_wt <- (z_alpha_in^2) * best_sum / (best_delta^2)
   
   return(c(true_worst_wt, true_worst_delta, true_best_wt, best_delta))
 }
 
-# Execute the high-speed row-wise parallel scan matrix mapping
-bounds_matrix <- t(apply(Pi_mat, 1, calc_true_worst_bounds))
+# Execute the high-speed row-wise parallel scan AFTER filtering out trash components
+bounds_matrix <- t(apply(Pi_mat, 1, calc_post_cutoff_worst_bounds))
 
 required_wt_strict    <- bounds_matrix[, 1]
 min_major_delta       <- bounds_matrix[, 2]
@@ -98,9 +101,6 @@ max_major_delta       <- bounds_matrix[, 4]
 required_scale_strict  <- 1 / min_major_delta
 required_scale_lenient <- 1 / max_major_delta
 
-z_sq_back_strict      <- eff_lib_size * (min_major_delta^2) / (required_wt_strict * (min_major_delta^2) / (z_alpha_in^2)) # Mathematical simplification
-# Direct reverse-engineering of alpha based on actual eff_lib_size vs true worst-case parameters
-# Formula: Z_back = sqrt(eff_lib_size * delta^2 / sum) -> since required_wt = Z^2 * sum / delta^2 -> sum/delta^2 = required_wt / Z^2
 z_sq_back_strict      <- eff_lib_size * (z_alpha_in^2) / required_wt_strict
 z_back_strict         <- sqrt(pmax(0, z_sq_back_strict))
 alpha_back_strict     <- pnorm(-z_back_strict) * 2
@@ -110,7 +110,7 @@ safe_level_pct_strict <- (1 - alpha_back_strict) * 100
 rel_status_mat <- matrix(-1, nrow = n_s, ncol = n_t, dimnames = list(sample_ids, colnames(P_raw)))
 rel_status_mat[non_zero_mask] <- 0
 
-# Identification of safe rows using the TRUE absolute worst-case required_wt boundary
+# Identification of safe rows using the TRUE post-cutoff worst-case required_wt boundary
 sample_is_safe <- (!is.na(required_wt_strict) & (eff_lib_size >= required_wt_strict))
 
 if (any(sample_is_safe)) {
@@ -137,7 +137,7 @@ Analysis_Report <- data.frame(
 
 # Output Execution Results
 print("========================================================================")
-print("             TRUE ALL-PAIRWISE PHYSICS BOUNDS REPORT                     ")
+print("        TRUE POST-CUTOFF ALL-PAIRWISE PHYSICS BOUNDS REPORT             ")
 print("========================================================================")
 print(head(Analysis_Report, n = 100))
 
