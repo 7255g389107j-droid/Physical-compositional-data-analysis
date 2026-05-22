@@ -1,0 +1,89 @@
+# ==============================================================================
+# CORRECTED MULTINOMIAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE
+# Corrected Formula: Delta_min = Z_alpha * sqrt( (pi_i + pi_j - (pi_i - pi_j)^2) / reads_input )
+# Developed by: Tatsuki Itagaki (Revised for Statistical Rigor)
+# ==============================================================================
+
+# --- [USER CONFIGURATION] MANUAL SETTINGS ---
+alpha_input         <- 0.001  
+reads_input         <- 53731  
+
+# --- INTERNAL PARAMETER ANCHOR ---
+z_alpha_in <- abs(qnorm(alpha_input / 2))
+fixed_lod_gate <- (1 / reads_input) * 10 
+
+# --- 1. DATA PREPARATION ---
+P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
+sample_ids <- rownames(P_raw)
+if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
+n_s <- nrow(P_raw)
+
+# --- 2. COMPOSITION SPACE MAPPING ---
+row_totals <- rowSums(P_raw)
+row_totals[row_totals == 0] <- 1  
+Pi_mat <- P_raw / row_totals 
+eff_lib_size <- rep(reads_input, n_s) 
+
+# --- 3. ROW-WISE VECTORIZED RESOLUTION DETERMINATION JUDGE ---
+calc_minimum_identifiable_bounds <- function(pi_row, current_wt, z_val, lod_gate) {
+  nz_pi <- pi_row[pi_row > 0]
+  if (length(nz_pi) < 2) return(c(length(nz_pi), NA, NA, 0)) 
+  
+  major_pi <- sort(nz_pi[nz_pi >= lod_gate])
+  len_major <- length(major_pi)
+  if (len_major < 2) return(c(len_major, NA, NA, 0))
+  
+  pi_j_vec <- major_pi[1:(len_major - 1)]
+  pi_i_vec <- major_pi[2:len_major]
+  
+  observed_deltas <- pi_i_vec - pi_j_vec
+  adjacent_sums   <- pi_i_vec + pi_j_vec
+  
+  # ============================================================================
+  # ✅ MATHEMATICAL CORRECTION (STATISTICALLY RIGOROUS MULTINOMIAL VARIANCE)
+  # 1. current_wt (N) is now correctly placed INSIDE the sqrt() function.
+  # 2. Covariance factor for compositional simplex data is integrated.
+  # ============================================================================
+  multinomial_variance <- (adjacent_sums - (observed_deltas^2)) / current_wt
+  critical_min_deltas  <- z_val * sqrt(multinomial_variance)
+  # ============================================================================
+  
+  all_pairs_passed <- all(observed_deltas >= critical_min_deltas)
+  is_fully_determined <- if(all_pairs_passed) 1 else 0
+  
+  worst_pair_idx             <- which.max(critical_min_deltas)
+  max_critical_delta         <- critical_min_deltas[worst_pair_idx]
+  actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
+  
+  return(c(len_major, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
+}
+
+# EXECUTE WITH RIGOROUS MATH
+resolution_matrix <- t(vapply(1:n_s, function(i) {
+  calc_minimum_identifiable_bounds(Pi_mat[i, ], eff_lib_size[i], z_alpha_in, fixed_lod_gate)
+}, FUN.VALUE = numeric(4)))
+
+# --- 4. ENGINE REPORT CONSTRUCTION ---
+Resolution_Report <- data.frame(
+  Sample_ID                        = sample_ids,
+  Surviving_Major_Components       = resolution_matrix[, 1],
+  Bottleneck_Critical_Delta        = resolution_matrix[, 2],
+  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 3],
+  Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 4]),
+  row.names                        = 1
+)
+
+# --- 5. TERMINAL OUTPUT GENERATION ---
+cat("\n========================================================================\n")
+cat("     CORRECTED RESOLUTION LIMIT BOUNDS REPORT (RIGOROUS MULTINOMIAL)     \n")
+cat("========================================================================\n")
+print(head(Resolution_Report, n = 100))
+cat("========================================================================\n")
+cat(sprintf(" Strictness Alpha Anchor    :  %s\n", alpha_input))
+cat(sprintf(" Configured Sequencing Depth:  %d reads\n", reads_input))
+cat(sprintf(" Calculated Fixed LOD Gate  :  %.5f (%.5f%%)\n", fixed_lod_gate, fixed_lod_gate * 100))
+cat(sprintf(" Total Samples Evaluated    :  %d\n", nrow(Resolution_Report)))
+cat(sprintf(" Fully Resolved Samples     :  %d (%.2f%%)\n", 
+            sum(Resolution_Report$Is_Rank_Fully_Determined), 
+            100 * mean(Resolution_Report$Is_Rank_Fully_Determined)))
+cat("========================================================================\n")
