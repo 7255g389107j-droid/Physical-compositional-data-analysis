@@ -24,7 +24,7 @@ calculate_coda_limits <- function(pi_i, pi_j, alpha) {
   
   # 2. Find the percentile point Z_alpha of the standard normal distribution
   # qnorm(alpha) gives the negative value, so taking the absolute value
-  z_alpha <- abs(qnorm(alpha))
+  z_alpha <- abs(qnorm(alpha/2))
   z_alpha_sq <- z_alpha^2
   
   # 3. Calculate the required total count (wt)
@@ -45,12 +45,12 @@ calculate_coda_limits <- function(pi_i, pi_j, alpha) {
 
 # --- Example Usage ---
 
-# Example 1: Standard case (alpha = 0.01 -> Z_alpha^2 ≈ 5.41)
+# Example 1: Standard case (alpha = 0.01 -> Z_alpha^2 ≈  6.635)
 res_1pt <- calculate_coda_limits(pi_i = 0.05, pi_j = 0.04, alpha = 0.01)
 print("--- Example 1 (alpha = 1%) ---")
 print(res_1pt)
 
-# Example 2: Extreme case (alpha = 0.001 -> Z_alpha^2 ≈ 9.55)
+# Example 2: Extreme case (alpha = 0.001 -> Z_alpha^2 ≈ 10.83)
 res_01pt <- calculate_coda_limits(pi_i = 0.05, pi_j = 0.04, alpha = 0.001)
 print("--- Example 2 (alpha = 0.1%) ---")
 print(res_01pt)
