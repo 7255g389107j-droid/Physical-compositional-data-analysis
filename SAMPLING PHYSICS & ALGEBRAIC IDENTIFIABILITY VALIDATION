@@ -35,31 +35,42 @@ row_totals[row_totals == 0] <- 1
 Pi_mat <- P_raw / row_totals
 
 # UNIFIED DIGITAL RESOLUTION INVERSION (Strict Mathematical Defense)
-# Ensure eff_lib_size always represents the dynamic sampling window in "proportion space".
-# If raw counts, the minimum resolution is 1 / row_totals.
 is_raw_counts <- any(row_totals > 1.01)
 if(is_raw_counts) {
   eff_lib_size <- row_totals
 } else {
-  # For already normalized data, back-calculate wt from the empirical minimum resolution step
   eff_lib_size <- 1 / full_minima
 }
 
 # --- 4. ANALYTICAL PAIRWISE ENGINE (pi_i > pi_j Verification) ---
 alpha_input <- 0.01 
-z_alpha_in  <- abs(qnorm(alpha_input/2))
+z_alpha_in  <- abs(qnorm(alpha_input / 2))
 
-Pi_temp <- Pi_mat
-idx_i   <- max.col(Pi_temp, ties.method = "first")
-pi_i    <- Pi_temp[1:n_s + (idx_i - 1) * n_s]
+# 4a. Capture the largest component (pi_i) per row
+Pi_temp_max <- Pi_mat
+idx_i   <- max.col(Pi_temp_max, ties.method = "first")
+pi_i    <- Pi_temp_max[1:n_s + (idx_i - 1) * n_s]
 
-Pi_temp[1:n_s + (idx_i - 1) * n_s] <- -1.0
-idx_j   <- max.col(Pi_temp, ties.method = "first")
-pi_j    <- Pi_temp[1:n_s + (idx_j - 1) * n_s]
+# 4b. Mask the largest component to instantly capture the second largest component (pi_j)
+Pi_temp_max[1:n_s + (idx_i - 1) * n_s] <- -1.0
+idx_j   <- max.col(Pi_temp_max, ties.method = "first")
+pi_j    <- Pi_temp_max[1:n_s + (idx_j - 1) * n_s]
 
+# 4c. ADVANCED MATRIX MAPPING FOR MAX_MAJOR_DELTA
+# Find the global absolute minimum non-zero proportion per row instantly
+Pi_temp_min <- Pi_mat
+Pi_temp_min[!non_zero_mask] <- huge_value
+idx_absolute_min <- max.col(-Pi_temp_min, ties.method = "first")
+pi_absolute_min  <- Pi_mat[1:n_s + (idx_absolute_min - 1) * n_s]
+
+# Compute Max_Major_Delta (Maximum distance between highest component and lowest non-zero component)
+max_major_delta <- pi_i - pi_absolute_min
+
+# 4d. Rigid guards against insufficient degrees of freedom
 has_insufficient_comps <- (pi_i <= 0 | pi_j <= 0 | rowSums(non_zero_mask) < 2)
 pi_i[has_insufficient_comps] <- NA
 pi_j[has_insufficient_comps] <- NA
+max_major_delta[has_insufficient_comps] <- NA
 
 is_tie <- (!is.na(pi_i) & !is.na(pi_j) & (pi_i == pi_j))
 pi_i[is_tie] <- pi_i[is_tie] + (1e-9 / eff_lib_size[is_tie])
@@ -84,7 +95,7 @@ rel_status_mat[non_zero_mask] <- 0
 # True physical criteria check: Identification of safe rows
 sample_is_safe <- (!is.na(required_wt) & (eff_lib_size >= required_wt))
 
-# CRITICAL CORRECTION: Use matrix subsetting with drop = FALSE to prevent 1-row vector collapse bug
+# Use matrix subsetting with drop = FALSE to prevent 1-row vector collapse bug
 if (any(sample_is_safe)) {
   safe_mask <- non_zero_mask[sample_is_safe, , drop = FALSE]
   replacement_values <- matrix(0, nrow = sum(sample_is_safe), ncol = n_t)
@@ -101,6 +112,7 @@ Analysis_Report <- data.frame(
   Sample_ID               = sample_ids,
   Effective_Library_Size  = eff_lib_size,
   Min_Major_Delta         = pi_i - pi_j,
+  Max_Major_Delta         = max_major_delta,
   Required_Scale          = required_scale,
   Required_wt_at_Alpha    = required_wt,
   Safe_Evaluation_Percent = safe_level_pct,
