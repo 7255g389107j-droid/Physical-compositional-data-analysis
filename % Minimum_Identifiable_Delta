@@ -1,15 +1,9 @@
 # ==============================================================================
-# ITAGAKI-SYSTEM: COMPOSITIONAL RESOLUTION ENGINE (SNR-DRIVEN PRODUCTION LEVEL)
-# Core Formula: Delta_min = Z_alpha * sqrt( (pi_i + pi_j - (pi_i - pi_j)^2) / wt )
-# Evaluates if ALL Actual_Observed_Delta >= Minimum_Identifiable_Delta
-# Developed by: Tatsuki Itagaki
+# ITAGAKI-SYSTEM: COMPOSITIONAL RESOLUTION ENGINE (TRUE COMPOSITIONAL SHANNON LIMIT)
+# Core Equation: Delta_min = sqrt( (Z_alpha^2 * (pi_i + pi_j)) / (wt + Z_alpha^2) )
+# Focus: Direct independent contrast between Physical Resolution Floor and Signal Delta
+# Developed by: Tatsuki Itagaki (Eliminated Circular Variance Bias)
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
-# License: MIT License (https://opensource.org)
-# 
-# ACADEMIC CITATION:
-# If you use this software or its logic in your research, please cite:
-# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.35655.05287
-# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
 # ==============================================================================
 
 # --- [USER CONFIGURATION] STRICTNESS ALPHA & PHYSICAL CAPACITY ANCHOR ---
@@ -18,94 +12,83 @@ reads_input         <- 53731  # Target physical sampling window capacity (wt)
 
 # --- INTERNAL PARAMETER ANCHOR ---
 z_alpha_in     <- abs(qnorm(alpha_input / 2))
-fixed_lod_gate <- (1 / reads_input) * 10 # Strict 10x count safety floor (LOD Gate)
+z_sq           <- z_alpha_in^2
+fixed_lod_gate <- (1 / reads_input) * 10 
 
-# --- 1. DATA PREPARATION & SCALE CHECK ---
-# Dataset must be a matrix/data.frame of proportions (0 to 1) or percentages (0 to 100)
-# Rows = Samples, Columns = Components
+# --- 1. DATA PREPARATION ---
 P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
 sample_ids <- rownames(P_raw)
 if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
 n_s <- nrow(P_raw)
 
-# --- 2. EXACT COMPOSITION MAPPING (Forcing Unit-Sum 1.0) ---
+# --- 2. EXACT COMPOSITION MAPPING ---
 row_totals <- rowSums(P_raw)
 Pi_mat     <- P_raw / ifelse(row_totals == 0, 1, row_totals)
-if (any(row_totals > 1.05)) {
-  Pi_mat <- P_raw / 100 # Automatically convert 0-100% scale to 0-1 proportion
-}
+if (any(row_totals > 1.05)) Pi_mat <- P_raw / 100
 
-# --- 3. ROW-WISE VECTORIZED COMPOSITIONAL RESOLUTION LIMIT RESOLVER ---
-calc_composition_resolution_bounds <- function(pi_row, target_wt, z_val, lod_gate) {
+# --- 3. ROW-WISE VECTORIZED RESOLUTION RESOLVER (TRUE SHANNON BOUNDS) ---
+calc_composition_resolution_bounds <- function(pi_row, target_wt, z_sq_val, lod_gate) {
   nz_pi <- pi_row[pi_row > 0]
   if (length(nz_pi) < 2) {
     return(c(as.numeric(length(nz_pi)), as.numeric(NA), as.numeric(NA), as.numeric(NA), 0))
   }
   
-  # Filter minor noise components using the static physical LOD gate
   major_pi <- sort(nz_pi[nz_pi >= lod_gate])
   len_major <- length(major_pi)
-  
-  # Strict Type-Safe Guard to prevent down-stream processing errors
   if (len_major < 2) {
     return(c(as.numeric(len_major), as.numeric(NA), as.numeric(NA), as.numeric(NA), 0))
   }
   
-  # Structural Vector Slicing (Eliminated colon operator risks)
   pi_j_vec <- major_pi[-len_major] 
   pi_i_vec <- major_pi[-1]         
   
   observed_deltas <- pi_i_vec - pi_j_vec
   adjacent_sums   <- pi_i_vec + pi_j_vec
   
-  # FIXED PHYSICAL MULTINOMIAL VARIANCE INJECTION
-  # Trimming minor noise components does not alter the historical physics scale (target_wt).
-  multinomial_variance <- (adjacent_sums - (observed_deltas^2)) / target_wt
-  critical_min_deltas  <- z_val * sqrt(multinomial_variance)
+  # ============================================================================
+  # THE TRUE PHYSICAL RESOLUTION LIMIT (SHANNON BOUNDS)
+  # Derived analytically by solving the quadratic equation: Delta = Z * sqrt((S - Delta^2)/wt)
+  # This isolates Delta_min as a pure property of the sampling window (wt) and component mass.
+  # ============================================================================
+  critical_min_deltas <- sqrt((z_sq_val * adjacent_sums) / (target_wt + z_sq_val))
+  # ============================================================================
   
-  # Avoid mathematical explosion/division by zero in case of identical values (Ties)
   critical_min_deltas[critical_min_deltas == 0] <- 1e-10
   
-  # ============================================================================
-  # PROVEN PHYSICS: SNR = Observed_Delta / Critical_Minimum_Delta
-  # Direct comparison between actual observed delta and calculated physical minimum.
-  # If ANY single pair has SNR < 1.0, the total rank fails (Is_Rank_Fully_Determined = FALSE)
-  # ============================================================================
+  # Calculate Signal-to-Noise Ratio based on TRUE Physical Bounds
   snr_vectors <- observed_deltas / critical_min_deltas
   
   all_pairs_passed <- all(snr_vectors >= 1.0)
   is_fully_determined <- if(all_pairs_passed) 1 else 0
   
-  # CRITICAL LOGIC ALIGNMENT FIX: Extract the EXACT pair where SNR is the ABSOLUTE MINIMUM
-  # This guarantees the printed metrics represent the actual mathematical reason for a FALSE rank.
+  # Extract the absolute structural bottleneck of the sample
   worst_pair_idx             <- which.min(snr_vectors)
   bottleneck_snr             <- snr_vectors[worst_pair_idx]
   max_critical_delta         <- critical_min_deltas[worst_pair_idx]
   actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
-  # ============================================================================
   
   return(c(as.numeric(len_major), bottleneck_snr, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
 }
 
-# EXECUTE TYPE-SAFE VECTOR QUANTIZATION VIA VAPPLY (Pure Base R)
+# EXECUTE WITH RIGOROUS PHYSICAL LOGIC
 resolution_matrix <- t(vapply(1:n_s, function(i) {
-  calc_composition_resolution_bounds(Pi_mat[i, ], reads_input, z_alpha_in, fixed_lod_gate)
+  calc_composition_resolution_bounds(Pi_mat[i, ], reads_input, z_sq, fixed_lod_gate)
 }, FUN.VALUE = numeric(5)))
 
-# --- 4. ENGINE REPORT CONSTRUCTION & LOGICAL CASTING ---
+# --- 4. ENGINE REPORT CONSTRUCTION ---
 Resolution_Report <- data.frame(
   Sample_ID                        = sample_ids,
   Surviving_Major_Components       = resolution_matrix[, 1],
-  Bottleneck_SNR                   = resolution_matrix[, 2], # SNR < 1.0 directly triggers FALSE
-  Bottleneck_Critical_Delta        = resolution_matrix[, 3], # Physical minimum delta (Delta_min) for this pair
-  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 4], # Observed delta for this pair
+  Bottleneck_SNR                   = resolution_matrix[, 2], 
+  Bottleneck_Critical_Delta        = resolution_matrix[, 3], # The PURE independent Delta_min
+  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 4], # The actual observed delta
   Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 5]),
   row.names                        = 1
 )
 
 # --- 5. TERMINAL OUTPUT GENERATION ---
 cat("\n========================================================================\n")
-cat("   ITAGAKI-SYSTEM: PHYSICAL COMPOSITIONAL RESOLUTION LIMIT REPORT       \n")
+cat("   ITAGAKI-SYSTEM: TRUE PHYSICAL COMPOSITIONAL RESOLUTION LIMIT REPORT  \n")
 cat("========================================================================\n")
 print(head(Resolution_Report, n = 100))
 cat("========================================================================\n")
