@@ -1,0 +1,100 @@
+# ==============================================================================
+# ITAGAKI-SYSTEM: PHYSICAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE
+# Core Theory: Delta_min = Z_alpha * sqrt( (pi_i + pi_j) / Effective_Library_Size )
+# Evaluates if Actual_Observed_Delta >= Minimum_Identifiable_Delta
+# Developed by: Tatsuki Itagaki
+# Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, please cite:
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
+# ==============================================================================
+
+# --- [USER CONFIGURATION] STRICTNESS ALPHA ANCHOR ---
+alpha_input <- 0.01  # Set to 0.001 for extreme 0.1% strictness window
+z_alpha_in  <- abs(qnorm(alpha_input / 2))
+
+# --- 1. DATA PREPARATION & NOISE FLOOR EXTRACTION ---
+P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
+sample_ids <- rownames(P_raw)
+if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
+n_s <- nrow(P_raw)
+n_t <- ncol(P_raw)
+
+non_zero_mask <- P_raw > 0
+huge_value <- max(P_raw) + 1.0
+P_temp <- P_raw
+P_temp[!non_zero_mask] <- huge_value
+
+min_col_idx <- max.col(-P_temp, ties.method = "first")
+full_minima <- P_raw[1:n_s + (min_col_idx - 1) * n_s]
+full_minima[rowSums(non_zero_mask) == 0] <- NA 
+
+# --- 2. COMPOSITION SPACE MAPPING & EFFECTIVE LIBRARY SIZE ---
+row_totals <- rowSums(P_raw)
+row_totals[row_totals == 0] <- 1  
+Pi_mat <- P_raw / row_totals
+
+is_raw_counts <- any(row_totals > 1.01)
+eff_lib_size <- if(is_raw_counts) row_totals else 1 / full_minima
+
+# --- 3. ROW-WISE VECTORIZED INVERSION & DETERMINATION JUDGE ---
+calc_minimum_identifiable_bounds <- function(pi_row, current_wt, z_val) {
+  nz_pi <- pi_row[pi_row > 0]
+  if (length(nz_pi) < 2) return(c(length(nz_pi), NA, NA, 0)) # 0 represents FALSE
+  
+  # Apply the strict 10x safety baseline FIRST (LOD Gate)
+  pi_min_observed <- min(nz_pi)
+  cutoff_threshold <- pi_min_observed * 10
+  major_pi <- sort(nz_pi[nz_pi >= cutoff_threshold])
+  
+  len_major <- length(major_pi)
+  if (len_major < 2) return(c(len_major, NA, NA, 0))
+  
+  # Calculate adjacent sums and observed deltas inside the vector space
+  pi_j_vec <- major_pi[1:(len_major - 1)]
+  pi_i_vec <- major_pi[2:len_major]
+  
+  observed_deltas <- pi_i_vec - pi_j_vec
+  adjacent_sums   <- pi_i_vec + pi_j_vec
+  
+  # TRUE INVERSE PHYSICS INJECTION: Critical Resolution Limit per adjacent pair
+  # Delta_min = Z_alpha * sqrt( (pi_i + pi_j) / w_t )
+  critical_min_deltas <- z_val * sqrt(adjacent_sums / current_wt)
+  
+  # Identify the true worst case (The absolute tightest bottleneck pair in this sample)
+  worst_pair_idx             <- which.max(critical_min_deltas)
+  max_critical_delta         <- critical_min_deltas[worst_pair_idx]
+  actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
+  
+  # SYSTEM DETERMINATION JUDGE:
+  # Ranks are fully secured only if ALL observed deltas >= critical min deltas.
+  # This is equivalent to checking if the worst case passes the boundary.
+  is_fully_determined <- if(actual_observed_at_minimum >= max_critical_delta) 1 else 0
+  
+  return(c(len_major, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
+}
+
+# EXECUTE TYPE-SAFE FIXED-LENGTH VECTOR QUANTIZATION VIA VAPPLY
+resolution_matrix <- t(vapply(1:n_s, function(i) {
+  calc_minimum_identifiable_bounds(Pi_mat[i, ], eff_lib_size[i], z_alpha_in)
+}, FUN.VALUE = numeric(4)))
+
+# --- 4. ENGINE REPORT CONSTRUCTION & LOGICAL CASTING ---
+Resolution_Report <- data.frame(
+  Sample_ID                        = sample_ids,
+  Effective_Library_Size           = eff_lib_size,
+  Surviving_Major_Components       = resolution_matrix[, 1],
+  Minimum_Identifiable_Delta       = resolution_matrix[, 2],
+  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 3],
+  Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 4]),
+  row.names                        = 1
+)
+
+print("========================================================================")
+print("     ITAGAKI-SYSTEM: PHYSICAL RESOLUTION LIMIT BOUNDS REPORT            ")
+print("========================================================================")
+print(head(Resolution_Report, n = 100))
+print("========================================================================")
