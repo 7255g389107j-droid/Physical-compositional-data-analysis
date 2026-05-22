@@ -1,0 +1,56 @@
+# ==============================================================================
+# Developed by: Tatsuki Itagaki
+# Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, please cite:
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
+# ==============================================================================
+# Function to calculate required scale and total counts (wt)
+
+calculate_coda_limits <- function(pi_i, pi_j, alpha) {
+  # Validate inputs
+  if (pi_i <= pi_j) {
+    stop("Error: pi_i must be strictly greater than pi_j (pi_i > pi_j).")
+  }
+  if (alpha <= 0 || alpha >= 1) {
+    stop("Error: alpha must be between 0 and 1 (exclusive).")
+  }
+  
+  # 1. Calculate the required scale based on the difference
+  required_scale <- 1 / (pi_i - pi_j)
+  
+  # 2. Find the percentile point Z_alpha of the standard normal distribution
+  # qnorm(alpha) gives the negative value, so taking the absolute value
+  z_alpha <- abs(qnorm(alpha))
+  z_alpha_sq <- z_alpha^2
+  
+  # 3. Calculate the required total count (wt)
+  required_wt <- z_alpha_sq * (pi_i + pi_j) / (pi_i - pi_j)^2
+  
+  # Return results as a named list
+  result <- list(
+    pi_i = pi_i,
+    pi_j = pi_j,
+    alpha = alpha,
+    z_alpha_squared = z_alpha_sq,
+    required_scale = required_scale,
+    required_wt = required_wt
+  )
+  
+  return(result)
+}
+
+# --- Example Usage ---
+
+# Example 1: Standard case (alpha = 0.01 -> Z_alpha^2 ≈ 5.41)
+res_1pt <- calculate_coda_limits(pi_i = 0.05, pi_j = 0.04, alpha = 0.01)
+print("--- Example 1 (alpha = 1%) ---")
+print(res_1pt)
+
+# Example 2: Extreme case (alpha = 0.001 -> Z_alpha^2 ≈ 9.55)
+res_01pt <- calculate_coda_limits(pi_i = 0.05, pi_j = 0.04, alpha = 0.001)
+print("--- Example 2 (alpha = 0.1%) ---")
+print(res_01pt)
