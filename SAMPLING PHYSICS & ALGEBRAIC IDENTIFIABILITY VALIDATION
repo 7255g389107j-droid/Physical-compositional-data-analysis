@@ -1,0 +1,124 @@
+# ==============================================================================
+# SAMPLING PHYSICS & ALGEBRAIC IDENTIFIABILITY VALIDATION ENGINE (FINAL PERFECT)
+# Core Theory: wt >= Z_alpha^2 * (pi_i + pi_j) / (pi_i - pi_j)^2
+# Developed by: Tatsuki Itagaki
+# Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, please cite:
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
+# ==============================================================================
+
+# --- 1. DATA PREPARATION ---
+P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
+sample_ids <- rownames(P_raw)
+if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
+n_s <- nrow(P_raw)
+n_t <- ncol(P_raw)
+
+# --- 2. VECTORIZED FLAT-INDEX NOISE FLOOR EXTRACTOR ---
+non_zero_mask <- P_raw > 0
+huge_value <- max(P_raw) + 1.0
+P_temp <- P_raw
+P_temp[!non_zero_mask] <- huge_value
+
+min_col_idx <- max.col(-P_temp, ties.method = "first")
+full_minima <- P_raw[1:n_s + (min_col_idx - 1) * n_s]
+full_minima[rowSums(non_zero_mask) == 0] <- NA 
+names(full_minima) <- sample_ids
+
+# --- 3. COMPOSITION SPACE MAPPING (Proportions / π-Space) ---
+row_totals <- rowSums(P_raw)
+row_totals[row_totals == 0] <- 1  
+Pi_mat <- P_raw / row_totals
+
+# UNIFIED DIGITAL RESOLUTION INVERSION (Strict Mathematical Defense)
+# Ensure eff_lib_size always represents the dynamic sampling window in "proportion space".
+# If raw counts, the minimum resolution is 1 / row_totals.
+is_raw_counts <- any(row_totals > 1.01)
+if(is_raw_counts) {
+  eff_lib_size <- row_totals
+} else {
+  # For already normalized data, back-calculate wt from the empirical minimum resolution step
+  eff_lib_size <- 1 / full_minima
+}
+
+# --- 4. ANALYTICAL PAIRWISE ENGINE (pi_i > pi_j Verification) ---
+alpha_input <- 0.01 
+z_alpha_in  <- abs(qnorm(alpha_input))
+
+Pi_temp <- Pi_mat
+idx_i   <- max.col(Pi_temp, ties.method = "first")
+pi_i    <- Pi_temp[1:n_s + (idx_i - 1) * n_s]
+
+Pi_temp[1:n_s + (idx_i - 1) * n_s] <- -1.0
+idx_j   <- max.col(Pi_temp, ties.method = "first")
+pi_j    <- Pi_temp[1:n_s + (idx_j - 1) * n_s]
+
+has_insufficient_comps <- (pi_i <= 0 | pi_j <= 0 | rowSums(non_zero_mask) < 2)
+pi_i[has_insufficient_comps] <- NA
+pi_j[has_insufficient_comps] <- NA
+
+is_tie <- (!is.na(pi_i) & !is.na(pi_j) & (pi_i == pi_j))
+pi_i[is_tie] <- pi_i[is_tie] + (1e-9 / eff_lib_size[is_tie])
+
+# --- 5. VECTORIZED MATHEMATICAL INVERSION ---
+required_scale <- 1 / (pi_i - pi_j)
+required_wt    <- (z_alpha_in^2) * (pi_i + pi_j) / (pi_i - pi_j)^2
+
+z_sq_back      <- eff_lib_size * ((pi_i - pi_j)^2) / (pi_i + pi_j)
+z_back         <- sqrt(pmax(0, z_sq_back))
+alpha_back     <- pnorm(-z_back) * 2
+safe_level_pct <- (1 - alpha_back) * 100
+
+required_scale[has_insufficient_comps] <- NA
+required_wt[has_insufficient_comps]    <- NA
+safe_level_pct[has_insufficient_comps] <- NA
+
+# --- 6. RIGID PHYSICS-BASED FILTERING ENGINE (DIMENSION-SAFE & FULLY VECTORIZED) ---
+rel_status_mat <- matrix(-1, nrow = n_s, ncol = n_t, dimnames = list(sample_ids, colnames(P_raw)))
+rel_status_mat[non_zero_mask] <- 0
+
+# True physical criteria check: Identification of safe rows
+sample_is_safe <- (!is.na(required_wt) & (eff_lib_size >= required_wt))
+
+# CRITICAL CORRECTION: Use matrix subsetting with drop = FALSE to prevent 1-row vector collapse bug
+if (any(sample_is_safe)) {
+  safe_mask <- non_zero_mask[sample_is_safe, , drop = FALSE]
+  replacement_values <- matrix(0, nrow = sum(sample_is_safe), ncol = n_t)
+  replacement_values[safe_mask] <- 1
+  rel_status_mat[sample_is_safe, ] <- replacement_values
+}
+
+# Pre-calculate Universal Reliable Targets (URT List across all dimensions)
+urt_mask <- colSums(rel_status_mat == 1) == n_s
+urt_list <- colnames(P_raw)[urt_mask]
+
+# --- 7. REPORT CONSTRUCTION & LOGGING ---
+Analysis_Report <- data.frame(
+  Sample_ID               = sample_ids,
+  Effective_Library_Size  = eff_lib_size,
+  Min_Major_Delta         = pi_i - pi_j,
+  Required_Scale          = required_scale,
+  Required_wt_at_Alpha    = required_wt,
+  Safe_Evaluation_Percent = safe_level_pct,
+  row.names               = 1
+)
+
+# Output Execution Results
+print("========================================================================")
+print("             BLAZING FAST ANALYTICAL PHYSICS REPORT                     ")
+print("========================================================================")
+print(head(Analysis_Report, n = 10))
+
+print("========================================================================")
+print("             UNIVERSAL RELIABLE TARGETS (URT LIST VIA Z_ALPHA)          ")
+print("========================================================================")
+if(length(urt_list) > 0) {
+  print(urt_list)
+} else {
+  print("No components survived the global Z_alpha threshold across all samples.")
+}
+print("========================================================================")
