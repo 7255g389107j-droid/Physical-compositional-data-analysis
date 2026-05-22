@@ -1,7 +1,7 @@
 # ==============================================================================
-# ITAGAKI-SYSTEM: PHYSICAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE
+# ITAGAKI-SYSTEM: PHYSICAL RESOLUTION & TOTAL RANK DETERMINATION ENGINE (COMPLETE)
 # Core Theory: Delta_min = Z_alpha * sqrt( (pi_i + pi_j) / Effective_Library_Size )
-# Evaluates if Actual_Observed_Delta >= Minimum_Identifiable_Delta
+# Evaluates if ALL Actual_Observed_Delta >= Minimum_Identifiable_Delta
 # Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
 # License: MIT License (https://opensource.org)
@@ -13,10 +13,11 @@
 # ==============================================================================
 
 # --- [USER CONFIGURATION] STRICTNESS ALPHA ANCHOR ---
-alpha_input <- 0.001  # This is strict criteria
+alpha_input <- 0.001  # Ultra-strict 0.1% significance window
 z_alpha_in  <- abs(qnorm(alpha_input / 2))
 
 # --- 1. DATA PREPARATION & NOISE FLOOR EXTRACTION ---
+# Ensure Dataset exists in your global environment before running
 P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
 sample_ids <- rownames(P_raw)
 if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
@@ -40,10 +41,10 @@ Pi_mat <- P_raw / row_totals
 is_raw_counts <- any(row_totals > 1.01)
 eff_lib_size <- if(is_raw_counts) row_totals else 1 / full_minima
 
-# --- 3. ROW-WISE VECTORIZED INVERSION & DETERMINATION JUDGE ---
+# --- 3. ROW-WISE VECTORIZED INVERSION & VECTORIZED DETERMINATION JUDGE ---
 calc_minimum_identifiable_bounds <- function(pi_row, current_wt, z_val) {
   nz_pi <- pi_row[pi_row > 0]
-  if (length(nz_pi) < 2) return(c(length(nz_pi), NA, NA, 0)) # 0 represents FALSE
+  if (length(nz_pi) < 2) return(c(length(nz_pi), NA, NA, 0)) 
   
   # Apply the strict 10x safety baseline FIRST (LOD Gate)
   pi_min_observed <- min(nz_pi)
@@ -61,23 +62,23 @@ calc_minimum_identifiable_bounds <- function(pi_row, current_wt, z_val) {
   adjacent_sums   <- pi_i_vec + pi_j_vec
   
   # TRUE INVERSE PHYSICS INJECTION: Critical Resolution Limit per adjacent pair
-  # Delta_min = Z_alpha * sqrt( (pi_i + pi_j) / w_t )
   critical_min_deltas <- z_val * sqrt(adjacent_sums / current_wt)
   
-  # Identify the true worst case (The absolute tightest bottleneck pair in this sample)
+  # MATHEMATICAL CORRECTION: 
+  # Check if ALL pairs simultaneously pass their respective resolution bounds.
+  # This prevents false positives where a non-bottleneck pair secretly fails.
+  all_pairs_passed <- all(observed_deltas >= critical_min_deltas)
+  is_fully_determined <- if(all_pairs_passed) 1 else 0
+  
+  # Extract the bottleneck metrics for reporting (the absolute tightest threshold)
   worst_pair_idx             <- which.max(critical_min_deltas)
   max_critical_delta         <- critical_min_deltas[worst_pair_idx]
   actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
   
-  # SYSTEM DETERMINATION JUDGE:
-  # Ranks are fully secured only if ALL observed deltas >= critical min deltas.
-  # This is equivalent to checking if the worst case passes the boundary.
-  is_fully_determined <- if(actual_observed_at_minimum >= max_critical_delta) 1 else 0
-  
   return(c(len_major, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
 }
 
-# EXECUTE TYPE-SAFE FIXED-LENGTH VECTOR QUANTIZATION VIA VAPPLY
+# EXECUTE TYPE-SAFE FIXED-LENGTH VECTOR QUANTIZATION VIA VAPPLY (Pure Base R)
 resolution_matrix <- t(vapply(1:n_s, function(i) {
   calc_minimum_identifiable_bounds(Pi_mat[i, ], eff_lib_size[i], z_alpha_in)
 }, FUN.VALUE = numeric(4)))
@@ -87,14 +88,21 @@ Resolution_Report <- data.frame(
   Sample_ID                        = sample_ids,
   Effective_Library_Size           = eff_lib_size,
   Surviving_Major_Components       = resolution_matrix[, 1],
-  Minimum_Identifiable_Delta       = resolution_matrix[, 2],
-  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 3],
+  Bottleneck_Critical_Delta        = resolution_matrix[, 2],
+  Actual_Observed_Delta_At_Worst   = resolution_matrix[, 3],
   Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 4]),
   row.names                        = 1
 )
 
-print("========================================================================")
-print("     ITAGAKI-SYSTEM: PHYSICAL RESOLUTION LIMIT BOUNDS REPORT            ")
-print("========================================================================")
+# --- 5. TERMINAL OUTPUT GENERATION ---
+cat("\n========================================================================\n")
+cat("     ITAGAKI-SYSTEM: PHYSICAL RESOLUTION LIMIT BOUNDS REPORT            \n")
+cat("========================================================================\n")
 print(head(Resolution_Report, n = 100))
-print("========================================================================")
+cat("========================================================================\n")
+cat(sprintf(" Strictness Alpha Anchor :  %s\n", alpha_input))
+cat(sprintf(" Total Samples Evaluated :  %d\n", nrow(Resolution_Report)))
+cat(sprintf(" Fully Resolved Samples  :  %d (%.2f%%)\n", 
+            sum(Resolution_Report$Is_Rank_Fully_Determined), 
+            100 * mean(Resolution_Report$Is_Rank_Fully_Determined)))
+cat("========================================================================\n")
