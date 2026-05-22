@@ -1,95 +1,116 @@
 # ==============================================================================
-# ITAGAKI-SYSTEM: COMPOSITIONAL RESOLUTION ENGINE (STRICT ADJACENT BOTTLENECK)
-# Formula: Delta_min = Z_alpha * sqrt( (pi_i + pi_j - (pi_i - pi_j)^2) / reads_input )
-# Developed by: Tatsuki Itagaki (Resolved Logic & Index Alignment Bug)
+# ITAGAKI-SYSTEM: COMPOSITIONAL RESOLUTION ENGINE (SNR-DRIVEN PRODUCTION LEVEL)
+# Core Formula: Delta_min = Z_alpha * sqrt( (pi_i + pi_j - (pi_i - pi_j)^2) / wt )
+# Evaluates if ALL Actual_Observed_Delta >= Minimum_Identifiable_Delta
+# Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
+# License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, please cite:
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
 # ==============================================================================
 
 # --- [USER CONFIGURATION] STRICTNESS ALPHA & PHYSICAL CAPACITY ANCHOR ---
-alpha_input         <- 0.001  
-reads_input         <- 53731  
+alpha_input         <- 0.001  # Ultra-strict 0.1% significance window
+reads_input         <- 53731  # Target physical sampling window capacity (wt)
 
 # --- INTERNAL PARAMETER ANCHOR ---
 z_alpha_in     <- abs(qnorm(alpha_input / 2))
-fixed_lod_gate <- (1 / reads_input) * 10 
+fixed_lod_gate <- (1 / reads_input) * 10 # Strict 10x count safety floor (LOD Gate)
 
-# --- 1. DATA PREPARATION & SCALE INTEGRATION ---
+# --- 1. DATA PREPARATION & SCALE CHECK ---
+# Dataset must be a matrix/data.frame of proportions (0 to 1) or percentages (0 to 100)
+# Rows = Samples, Columns = Components
 P_raw <- as.matrix(Dataset[, colSums(Dataset != 0) > 0])
 sample_ids <- rownames(P_raw)
 if(is.null(sample_ids)) sample_ids <- paste0("S_", 1:nrow(P_raw))
 n_s <- nrow(P_raw)
 
 # --- 2. EXACT COMPOSITION MAPPING (Forcing Unit-Sum 1.0) ---
-row_sums_raw <- rowSums(P_raw)
-if (any(row_sums_raw > 1.05)) {
-  Pi_mat <- P_raw / 100          
-} else {
-  Pi_mat <- P_raw / row_sums_raw 
+row_totals <- rowSums(P_raw)
+Pi_mat     <- P_raw / ifelse(row_totals == 0, 1, row_totals)
+if (any(row_totals > 1.05)) {
+  Pi_mat <- P_raw / 100 # Automatically convert 0-100% scale to 0-1 proportion
 }
 
 # --- 3. ROW-WISE VECTORIZED COMPOSITIONAL RESOLUTION LIMIT RESOLVER ---
 calc_composition_resolution_bounds <- function(pi_row, target_wt, z_val, lod_gate) {
   nz_pi <- pi_row[pi_row > 0]
-  if (length(nz_pi) < 2) return(c(as.numeric(length(nz_pi)), as.numeric(NA), as.numeric(NA), 0)) 
+  if (length(nz_pi) < 2) {
+    return(c(as.numeric(length(nz_pi)), as.numeric(NA), as.numeric(NA), as.numeric(NA), 0))
+  }
   
+  # Filter minor noise components using the static physical LOD gate
   major_pi <- sort(nz_pi[nz_pi >= lod_gate])
   len_major <- length(major_pi)
   
-  if (len_major < 2) return(c(as.numeric(len_major), as.numeric(NA), as.numeric(NA), 0))
+  # Strict Type-Safe Guard to prevent down-stream processing errors
+  if (len_major < 2) {
+    return(c(as.numeric(len_major), as.numeric(NA), as.numeric(NA), as.numeric(NA), 0))
+  }
   
-  # Type-Safe Array Slicing
+  # Structural Vector Slicing (Eliminated colon operator risks)
   pi_j_vec <- major_pi[-len_major] 
   pi_i_vec <- major_pi[-1]         
   
   observed_deltas <- pi_i_vec - pi_j_vec
   adjacent_sums   <- pi_i_vec + pi_j_vec
   
-  # Fixed physical multinomial variance calculation
+  # FIXED PHYSICAL MULTINOMIAL VARIANCE INJECTION
+  # Trimming minor noise components does not alter the historical physics scale (target_wt).
   multinomial_variance <- (adjacent_sums - (observed_deltas^2)) / target_wt
   critical_min_deltas  <- z_val * sqrt(multinomial_variance)
   
-  # Simultaneous Rank Verification Gate
-  all_pairs_passed <- all(observed_deltas >= critical_min_deltas)
+  # Avoid mathematical explosion/division by zero in case of identical values (Ties)
+  critical_min_deltas[critical_min_deltas == 0] <- 1e-10
+  
+  # ============================================================================
+  # PROVEN PHYSICS: SNR = Observed_Delta / Critical_Minimum_Delta
+  # Direct comparison between actual observed delta and calculated physical minimum.
+  # If ANY single pair has SNR < 1.0, the total rank fails (Is_Rank_Fully_Determined = FALSE)
+  # ============================================================================
+  snr_vectors <- observed_deltas / critical_min_deltas
+  
+  all_pairs_passed <- all(snr_vectors >= 1.0)
   is_fully_determined <- if(all_pairs_passed) 1 else 0
   
-  # ============================================================================
-  # ✅ FIX: ALIGN REPORTING INDEX TO THE TRUE COMPOSITIONAL BOTTLENECK
-  # Find the exact pair where the safety margin (Observed - Critical) is MINIMAL.
-  # This guarantees the printed metrics represent the actual reason for a FALSE rank.
-  # ============================================================================
-  safety_margins             <- observed_deltas - critical_min_deltas
-  bottleneck_idx             <- which.min(safety_margins)
-  
-  max_critical_delta         <- critical_min_deltas[bottleneck_idx]
-  actual_observed_at_minimum <- observed_deltas[bottleneck_idx]
+  # CRITICAL LOGIC ALIGNMENT FIX: Extract the EXACT pair where SNR is the ABSOLUTE MINIMUM
+  # This guarantees the printed metrics represent the actual mathematical reason for a FALSE rank.
+  worst_pair_idx             <- which.min(snr_vectors)
+  bottleneck_snr             <- snr_vectors[worst_pair_idx]
+  max_critical_delta         <- critical_min_deltas[worst_pair_idx]
+  actual_observed_at_minimum <- observed_deltas[worst_pair_idx]
   # ============================================================================
   
-  return(c(as.numeric(len_major), max_critical_delta, actual_observed_at_minimum, is_fully_determined))
+  return(c(as.numeric(len_major), bottleneck_snr, max_critical_delta, actual_observed_at_minimum, is_fully_determined))
 }
 
-# EXECUTE TYPE-SAFE VECTOR QUANTIZATION
+# EXECUTE TYPE-SAFE VECTOR QUANTIZATION VIA VAPPLY (Pure Base R)
 resolution_matrix <- t(vapply(1:n_s, function(i) {
   calc_composition_resolution_bounds(Pi_mat[i, ], reads_input, z_alpha_in, fixed_lod_gate)
-}, FUN.VALUE = numeric(4)))
+}, FUN.VALUE = numeric(5)))
 
-# --- 4. ENGINE REPORT CONSTRUCTION ---
+# --- 4. ENGINE REPORT CONSTRUCTION & LOGICAL CASTING ---
 Resolution_Report <- data.frame(
   Sample_ID                        = sample_ids,
   Surviving_Major_Components       = resolution_matrix[, 1],
-  Bottleneck_Critical_Delta        = resolution_matrix[, 2],
-  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 3],
-  Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 4]),
+  Bottleneck_SNR                   = resolution_matrix[, 2], # SNR < 1.0 directly triggers FALSE
+  Bottleneck_Critical_Delta        = resolution_matrix[, 3], # Physical minimum delta (Delta_min) for this pair
+  Actual_Observed_Delta_At_Minimum = resolution_matrix[, 4], # Observed delta for this pair
+  Is_Rank_Fully_Determined         = as.logical(resolution_matrix[, 5]),
   row.names                        = 1
 )
 
 # --- 5. TERMINAL OUTPUT GENERATION ---
 cat("\n========================================================================\n")
-cat("   ITAGAKI-SYSTEM: PHYSICAL RESOLUTION ENGINE (MULTINOMIAL PROPORTION)  \n")
+cat("   ITAGAKI-SYSTEM: PHYSICAL COMPOSITIONAL RESOLUTION LIMIT REPORT       \n")
 cat("========================================================================\n")
 print(head(Resolution_Report, n = 100))
 cat("========================================================================\n")
 cat(sprintf(" Strictness Alpha Anchor       :  %s\n", alpha_input))
-cat(sprintf(" Physical Sampling Window (wt) :  %d\n", reads_input))
+cat(sprintf(" Physical Sampling Window (wt) :  %d reads\n", reads_input))
 cat(sprintf(" Calculated Static LOD Gate    :  %.5f (%.5f%%)\n", fixed_lod_gate, fixed_lod_gate * 100))
 cat(sprintf(" Total Samples Evaluated       :  %d\n", nrow(Resolution_Report)))
 cat(sprintf(" Fully Resolved Samples        :  %d (%.2f%%)\n", 
