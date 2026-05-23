@@ -1,6 +1,6 @@
 # ==============================================================================
-# COMPOSITIONAL BOUNDARY RESOLUTION ANALYSIS
-# EXACT BINOMIAL PIPELINE VIA DETERMINISTIC BINARY SEARCH METHOD
+# ULTRA-HIGH-SPEED COMPOSITIONAL BOUNDARY RESOLUTION ANALYSIS
+# FIXED PHYSICAL ANCHOR ENGINE WITH wt >= 100 NECESSARY CONDITION
 # 
 # Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki
@@ -12,26 +12,43 @@
 # Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
 # ==============================================================================
 
-# Freeze environmental variables to enforce strict non-fragmented text layout
+# Freeze environmental layout variables to eliminate console text fragmentation
 options(scipen = 999, width = 120)
 
 # --- 1. SYSTEM PARAMETER CONFIGURATION ---
-w_t       <- 500      # Total sampling window size (CLT failure region)
+w_t       <- 500      # Total sampling window size (Try values < 100 to test anchor)
 alpha     <- 0.001    # Allowable error probability bound (0.1%)
 s_targets <- c(0.01, 1.00)
 
-# --- 2. VECTORIZED BINARY SEARCH ENGINE (HIGH-SPEED DETERMINISTIC ANCHOR) ---
+# --- 2. THE HARD PHYSICAL ANCHOR INTERCEPT (NECESSARY CONDITION VERIFICATION) ---
+# If the fundamental information mass is insufficient, immediately abort execution.
+if (w_t < 100) {
+  abort_buffer <- c(
+    "",
+    "========================================================================",
+    "      CRITICAL ERROR: CRASH BLOCKER (PHYSICAL ANCHOR BREACHED)          ",
+    "========================================================================",
+    sprintf("INPUT TOTAL COUNTS (w_t)  : %d", w_t),
+    "CRITICAL REQUIREMENT      : w_t >= 100 IS A NECESSARY CONDITION.",
+    "STATUS                    : REJECTED. Mathematical space has collapsed.",
+    "                            No statistical discussion is physically allowed.",
+    "========================================================================\n"
+  )
+  invisible(cat(paste(abort_buffer, collapse = "\n")))
+  stop("Execution halted: Total counts sit below the physical discussion floor.", call. = FALSE)
+}
+
+# --- 3. VECTORIZED BINARY SEARCH ENGINE (EXECUTED ONLY IF WT >= 100) ---
 data_lines <- sapply(s_targets, function(s) {
   w_sub <- round(w_t * s)
   
-  # Handle zero-count edge cases safely
   if (w_sub == 0) {
     return(sprintf("%-15.2f | %-15d | %-20.6f | %-15s", s, w_sub, s, "N/A (Zero-Count)"))
   }
   
   critical_x <- floor(w_sub / 2)
   
-  # Binary Search Initialization
+  # Deterministic Binary Search Routine (~18 steps)
   low  <- 0
   high <- s
   tol  <- 0.000001  # Precision threshold (1e-6)
@@ -51,19 +68,17 @@ data_lines <- sapply(s_targets, function(s) {
   }
   delta_min <- high
   
-  # Pre-format to eliminate trailing space bugs in the terminal
   pct_string <- sprintf("%.3f%%", delta_min * 100)
-  
   return(sprintf("%-15.2f | %-15d | %-20.6f | %-15s", s, w_sub, delta_min, pct_string))
 })
 
-# --- 3. CONSOLIDATED SINGLE-FLUSH BUFFER RENDERING ---
+# --- 4. CONSOLIDATED SINGLE-FLUSH BUFFER RENDERING ---
 output_buffer <- c(
   "",
   "========================================================================",
   "      FINAL COMPOSITIONAL ORDER RESOLUTION ANALYSIS SUMMARY             ",
   "========================================================================",
-  sprintf("TOTAL SAMPLE WINDOW (w_t) : %d", w_t),
+  sprintf("TOTAL SAMPLE WINDOW (w_t) : %d (Verified: Meets w_t >= 100 Floor)", w_t),
   sprintf("ALPHA CONFIDENCE BOUND    : %.3f (Strict 0.1%% Limit)", alpha),
   "------------------------------------------------------------------------",
   sprintf("%-15s | %-15s | %-20s | %-15s", "Sub-space (s)", "w_sub (Counts)", "Exact Delta_min", "Delta_min (%)"),
@@ -72,5 +87,4 @@ output_buffer <- c(
   "========================================================================\n"
 )
 
-# Flush the complete string array to the console at once
 invisible(cat(paste(output_buffer, collapse = "\n")))
