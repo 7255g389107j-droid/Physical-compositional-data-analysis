@@ -1,0 +1,66 @@
+# ==============================================================================
+# Configuration: Small Sample Size Window (w_t < 1000)
+# Developed by: Tatsuki Itagaki
+# Copyright (c) 2026 Tatsuki Itagaki
+# License: MIT License (https://opensource.org)
+# ==============================================================================
+
+# Total count size (Small sampling window where CLT fails)
+w_t <- 500  
+
+# Sum of the two true proportions (pi_i + pi_j). 
+# At small w_t, this sub-space size heavily skews the binomial trials.
+s <- 0.5  
+
+# Allowable error probability for order reversal (Strict bound)
+alpha <- 0.001  
+
+# ==============================================================================
+# Calculation Process (Exact Binomial Approach)
+# ==============================================================================
+# In a tiny window, we cannot use qnorm (Z-score).
+# We must find the boundary where the probability of drawing equal or reversed 
+# counts exceeds alpha, using the Exact Binomial Distribution.
+
+# Grid search for the minimum distinguishable delta within the sub-space 's'
+delta_grid <- seq(0, s, length.out = 10000)
+delta_min <- s # Default fallback
+
+for (d in delta_grid) {
+  # Reconstruct the two underlying true proportions based on the delta
+  pi_i <- (s + d) / 2
+  pi_j <- (s - d) / 2
+  
+  # Conditional probability inside the two-component system
+  p_cond <- pi_i / s
+  
+  # Expected total trials landed in this two-component sub-space
+  w_sub <- round(w_t * s)
+  
+  if (w_sub == 0) {
+    delta_min <- s
+    break
+  }
+  
+  # Tie-break boundary for counts (X_i <= X_j)
+  # Reversal or tie occurs when X_i is less than or equal to half of w_sub
+  critical_x <- floor(w_sub / 2)
+  
+  # Calculate exact cumulative probability of order reversal/tie
+  error_prob <- pbinom(critical_x, size = w_sub, prob = p_cond)
+  
+  # The first delta that suppresses the error below alpha is our physical limit
+  if (error_prob <= alpha) {
+    delta_min <- d
+    break
+  }
+}
+
+# ==============================================================================
+# Output Results
+# ==============================================================================
+cat("--- Exact Analysis Results (CLT Non-Growth Region) ---\n")
+cat(sprintf("Total Counts (w_t)        : %d (CLT Invalid < 1000)\n", w_t))
+cat(sprintf("Sub-space Counts (w_sub)  : %d\n", w_sub))
+cat(sprintf("Alpha Level (Strict Error): %.3f\n", alpha))
+cat(sprintf("Minimum Exact Delta       : %.5f (%.3f%%)\n", delta_min, delta_min * 100))
