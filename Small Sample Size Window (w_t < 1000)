@@ -1,66 +1,76 @@
 # ==============================================================================
-# Configuration: Small Sample Size Window (w_t < 1000)
+# COMPOSITIONAL BOUNDARY RESOLUTION ANALYSIS
+# EXACT BINOMIAL PIPELINE VIA DETERMINISTIC BINARY SEARCH METHOD
+# 
 # Developed by: Tatsuki Itagaki
 # Copyright (c) 2026 Tatsuki Itagaki
 # License: MIT License (https://opensource.org)
+# 
+# ACADEMIC CITATION:
+# If you use this software or its logic in your research, please cite:
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.35655.05287
+# Itagaki, T. (2026). DOI: 10.13140/RG.2.2.21982.60486
 # ==============================================================================
 
-# Total count size (Small sampling window where CLT fails)
-w_t <- 500  
+# Freeze environmental variables to enforce strict non-fragmented text layout
+options(scipen = 999, width = 120)
 
-# Sum of the two true proportions (pi_i + pi_j). 
-# At small w_t, this sub-space size heavily skews the binomial trials.
-s <- 0.5  
+# --- 1. SYSTEM PARAMETER CONFIGURATION ---
+w_t       <- 500      # Total sampling window size (CLT failure region)
+alpha     <- 0.001    # Allowable error probability bound (0.1%)
+s_targets <- c(0.01, 1.00)
 
-# Allowable error probability for order reversal (Strict bound)
-alpha <- 0.001  
-
-# ==============================================================================
-# Calculation Process (Exact Binomial Approach)
-# ==============================================================================
-# In a tiny window, we cannot use qnorm (Z-score).
-# We must find the boundary where the probability of drawing equal or reversed 
-# counts exceeds alpha, using the Exact Binomial Distribution.
-
-# Grid search for the minimum distinguishable delta within the sub-space 's'
-delta_grid <- seq(0, s, length.out = 10000)
-delta_min <- s # Default fallback
-
-for (d in delta_grid) {
-  # Reconstruct the two underlying true proportions based on the delta
-  pi_i <- (s + d) / 2
-  pi_j <- (s - d) / 2
-  
-  # Conditional probability inside the two-component system
-  p_cond <- pi_i / s
-  
-  # Expected total trials landed in this two-component sub-space
+# --- 2. VECTORIZED BINARY SEARCH ENGINE (HIGH-SPEED DETERMINISTIC ANCHOR) ---
+data_lines <- sapply(s_targets, function(s) {
   w_sub <- round(w_t * s)
   
+  # Handle zero-count edge cases safely
   if (w_sub == 0) {
-    delta_min <- s
-    break
+    return(sprintf("%-15.2f | %-15d | %-20.6f | %-15s", s, w_sub, s, "N/A (Zero-Count)"))
   }
   
-  # Tie-break boundary for counts (X_i <= X_j)
-  # Reversal or tie occurs when X_i is less than or equal to half of w_sub
   critical_x <- floor(w_sub / 2)
   
-  # Calculate exact cumulative probability of order reversal/tie
-  error_prob <- pbinom(critical_x, size = w_sub, prob = p_cond)
+  # Binary Search Initialization
+  low  <- 0
+  high <- s
+  tol  <- 0.000001  # Precision threshold (1e-6)
   
-  # The first delta that suppresses the error below alpha is our physical limit
-  if (error_prob <= alpha) {
-    delta_min <- d
-    break
+  while ((high - low) > tol) {
+    mid <- (low + high) / 2
+    pi_i <- (s + mid) / 2
+    p_cond <- pi_i / s
+    
+    error_prob <- pbinom(critical_x, size = w_sub, prob = p_cond)
+    
+    if (error_prob <= alpha) {
+      high <- mid
+    } else {
+      low <- mid
+    }
   }
-}
+  delta_min <- high
+  
+  # Pre-format to eliminate trailing space bugs in the terminal
+  pct_string <- sprintf("%.3f%%", delta_min * 100)
+  
+  return(sprintf("%-15.2f | %-15d | %-20.6f | %-15s", s, w_sub, delta_min, pct_string))
+})
 
-# ==============================================================================
-# Output Results
-# ==============================================================================
-cat("--- Exact Analysis Results (CLT Non-Growth Region) ---\n")
-cat(sprintf("Total Counts (w_t)        : %d (CLT Invalid < 1000)\n", w_t))
-cat(sprintf("Sub-space Counts (w_sub)  : %d\n", w_sub))
-cat(sprintf("Alpha Level (Strict Error): %.3f\n", alpha))
-cat(sprintf("Minimum Exact Delta       : %.5f (%.3f%%)\n", delta_min, delta_min * 100))
+# --- 3. CONSOLIDATED SINGLE-FLUSH BUFFER RENDERING ---
+output_buffer <- c(
+  "",
+  "========================================================================",
+  "      FINAL COMPOSITIONAL ORDER RESOLUTION ANALYSIS SUMMARY             ",
+  "========================================================================",
+  sprintf("TOTAL SAMPLE WINDOW (w_t) : %d", w_t),
+  sprintf("ALPHA CONFIDENCE BOUND    : %.3f (Strict 0.1%% Limit)", alpha),
+  "------------------------------------------------------------------------",
+  sprintf("%-15s | %-15s | %-20s | %-15s", "Sub-space (s)", "w_sub (Counts)", "Exact Delta_min", "Delta_min (%)"),
+  "------------------------------------------------------------------------",
+  data_lines,
+  "========================================================================\n"
+)
+
+# Flush the complete string array to the console at once
+invisible(cat(paste(output_buffer, collapse = "\n")))
