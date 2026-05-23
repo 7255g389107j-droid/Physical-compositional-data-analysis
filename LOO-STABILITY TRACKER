@@ -3,6 +3,8 @@
 # ------------------------------------------------------------------------------
 # Feature: System Perturber Detection via Leave-One-Out (LOO) Invariance Analysis
 # Graphic Update: Standardized Z-Score Deviation Matrix
+# Comparing data between rows is difficult. 
+# It's impossible to distinguish between sampling bias and adversarial data simulation.
 # Developed by: Tatsuki Itagaki
 # Sunday, May 17, 2026
 # Copyright (c) 2026 Tatsuki Itagaki. All Rights Reserved.
